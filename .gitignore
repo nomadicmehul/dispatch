@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.dispatch/
+*.tsbuildinfo
+.claude
+
+# OS files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+
+# Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Debug logs
+npm-debug.log*
+yarn-error.log*
