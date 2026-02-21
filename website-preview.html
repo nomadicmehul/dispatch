@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatch — AI-Powered Batch Issue Solver for GitHub</title>
+  <meta name="description" content="Dispatch solves your GitHub issues in batch using AI. Run it at night, review pull requests in the morning." />
+  <meta name="keywords" content="github, cli, ai, automation, issues, pull requests, claude, developer tools" />
+  <meta property="og:title" content="Dispatch — Solve GitHub Issues While You Sleep" />
+  <meta property="og:description" content="AI-powered CLI that automatically solves GitHub issues in batch, creates branches, and opens pull requests." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://nomadicmehul.github.io/dispatch/" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: 16px; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e8;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; }
+
+    /* ===== CSS VARIABLES ===== */
+    :root {
+      --brand: #6c5ce7;
+      --brand-light: #a29bfe;
+      --brand-glow: rgba(108, 92, 231, 0.3);
+      --accent: #00cec9;
+      --accent-glow: rgba(0, 206, 201, 0.3);
+      --yellow: #ffeaa7;
+      --orange: #e17055;
+      --surface: #12121a;
+      --surface-2: #1a1a26;
+      --surface-3: #22222f;
+      --border: rgba(255,255,255,0.06);
+      --text: #e0e0e8;
+      --text-dim: #8888a0;
+      --max-w: 1200px;
+      --radius: 16px;
+    }
+
+    /* ===== ANIMATED BACKGROUND ===== */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-image:
+        linear-gradient(rgba(108,92,231,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(108,92,231,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    .bg-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(150px);
+      opacity: 0.15;
+      z-index: -1;
+      pointer-events: none;
+    }
+    .bg-glow-1 { background: var(--brand); top: -200px; left: -100px; }
+    .bg-glow-2 { background: var(--accent); bottom: -200px; right: -100px; }
+
+    /* ===== NAVBAR ===== */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 0 2rem;
+      backdrop-filter: blur(20px);
+      background: rgba(10,10,15,0.8);
+      border-bottom: 1px solid var(--border);
+      transition: all 0.3s;
+    }
+    nav .nav-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.5px;
+    }
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--brand), var(--accent));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      box-shadow: 0 4px 20px var(--brand-glow);
+    }
+    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-dim);
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: #fff; }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--brand), #5a4bd1);
+      color: #fff !important;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 25px var(--brand-glow);
+    }
+    .hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; }
+    .hamburger span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--text);
+      margin: 6px 0;
+      transition: 0.3s;
+      border-radius: 2px;
+    }
+
+    /* ===== HERO ===== */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 2rem 80px;
+    }
+    .hero-content { max-width: 800px; }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      padding: 6px 16px;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--brand-light);
+      margin-bottom: 2rem;
+      animation: fadeUp 0.8s ease;
+    }
+    .hero-badge .dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .hero h1 {
+      font-size: clamp(2.8rem, 6vw, 4.5rem);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -2px;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.8s ease 0.1s both;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--brand-light), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-dim);
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+      animation: fadeUp 0.8s ease 0.2s both;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      animation: fadeUp 0.8s ease 0.3s both;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand), #5a4bd1);
+      color: #fff;
+      box-shadow: 0 4px 25px var(--brand-glow);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 35px var(--brand-glow);
+    }
+    .btn-secondary {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: var(--surface-3);
+      border-color: rgba(255,255,255,0.1);
+    }
+
+    /* Terminal Demo */
+    .terminal {
+      max-width: 680px;
+      margin: 4rem auto 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      text-align: left;
+      animation: fadeUp 0.8s ease 0.4s both;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+    .terminal-dot.red { background: #ff5f57; }
+    .terminal-dot.yellow { background: #febc2e; }
+    .terminal-dot.green { background: #28c840; }
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .terminal-body {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.9;
+      min-height: 220px;
+    }
+    .t-prompt { color: var(--accent); }
+    .t-cmd { color: #fff; font-weight: 600; }
+    .t-dim { color: var(--text-dim); }
+    .t-brand { color: var(--brand-light); }
+    .t-success { color: #55efc4; }
+    .t-warn { color: var(--yellow); }
+    .t-line { margin-bottom: 4px; }
+
+    /* ===== SECTIONS ===== */
+    section { padding: 100px 2rem; }
+    .container { max-width: var(--max-w); margin: 0 auto; }
+    .section-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--brand-light);
+      margin-bottom: 1rem;
+    }
+    .section-title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+    }
+    .section-sub {
+      font-size: 1.1rem;
+      color: var(--text-dim);
+      max-width: 600px;
+      margin-bottom: 3.5rem;
+    }
+
+    /* ===== HOW IT WORKS ===== */
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+    .workflow-card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      transition: all 0.3s;
+    }
+    .workflow-card:hover {
+      border-color: rgba(108,92,231,0.3);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .workflow-step {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, var(--brand), var(--accent));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: #fff;
+      margin-bottom: 1.2rem;
+    }
+    .workflow-card h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+    }
+    .workflow-card p { color: var(--text-dim); font-size: 0.95rem; }
+
+    /* ===== FEATURES ===== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      transition: all 0.3s;
+    }
+    .feature-card:hover {
+      border-color: rgba(108,92,231,0.2);
+      background: var(--surface-2);
+    }
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .feature-card p { color: var(--text-dim); font-size: 0.9rem; }
+
+    /* ===== COMMANDS ===== */
+    .commands-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+    .command-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      transition: all 0.3s;
+    }
+    .command-card:hover {
+      border-color: rgba(0,206,201,0.3);
+    }
+    .command-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .command-card p { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1rem; }
+    .command-flags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .flag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      background: var(--surface-3);
+      padding: 3px 10px;
+      border-radius: 6px;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    /* ===== CLASSIFICATION ===== */
+    .class-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .class-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      transition: all 0.3s;
+    }
+    .class-card:hover { border-color: rgba(108,92,231,0.3); }
+    .class-emoji { font-size: 1.6rem; flex-shrink: 0; margin-top: 2px; }
+    .class-card h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+    .class-card p { font-size: 0.82rem; color: var(--text-dim); }
+
+    /* ===== VISION ===== */
+    .vision-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .vision-text h3 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+    .vision-text p {
+      color: var(--text-dim);
+      margin-bottom: 1.5rem;
+      font-size: 1rem;
+    }
+    .vision-list { list-style: none; }
+    .vision-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .vision-check {
+      width: 22px;
+      height: 22px;
+      background: rgba(0,206,201,0.15);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--accent);
+      font-size: 0.7rem;
+      margin-top: 2px;
+    }
+    .vision-graphic {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem;
+      text-align: center;
+    }
+    .vision-graphic .big-quote {
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1.4;
+      margin-bottom: 1rem;
+    }
+    .vision-graphic .big-quote .gradient {
+      background: linear-gradient(135deg, var(--brand-light), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .vision-graphic p { color: var(--text-dim); font-size: 0.9rem; }
+
+    /* ===== ROADMAP ===== */
+    .roadmap-timeline {
+      position: relative;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .roadmap-timeline::before {
+      content: '';
+      position: absolute;
+      left: 24px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--brand), var(--accent), transparent);
+    }
+    .roadmap-item {
+      position: relative;
+      padding-left: 64px;
+      margin-bottom: 2.5rem;
+    }
+    .roadmap-dot {
+      position: absolute;
+      left: 16px;
+      top: 6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 3px solid var(--brand);
+      background: var(--surface);
+    }
+    .roadmap-dot.done {
+      background: var(--brand);
+      box-shadow: 0 0 12px var(--brand-glow);
+    }
+    .roadmap-dot.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+      animation: pulse 2s infinite;
+    }
+    .roadmap-phase {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--brand-light);
+      margin-bottom: 4px;
+    }
+    .roadmap-item h4 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+    .roadmap-item p { color: var(--text-dim); font-size: 0.9rem; }
+
+    /* ===== SPONSOR ===== */
+    .sponsor-section {
+      background: linear-gradient(135deg, rgba(108,92,231,0.08), rgba(0,206,201,0.05));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .sponsor-inner {
+      text-align: center;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .sponsor-inner .section-sub { margin-left: auto; margin-right: auto; }
+    .sponsor-tiers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .tier-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .tier-card:hover {
+      border-color: rgba(108,92,231,0.3);
+      transform: translateY(-4px);
+    }
+    .tier-card.featured {
+      border-color: var(--brand);
+      box-shadow: 0 0 30px var(--brand-glow);
+    }
+    .tier-emoji { font-size: 2.2rem; margin-bottom: 0.8rem; display: block; }
+    .tier-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .tier-card p { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .btn-sponsor {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 22px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-sponsor:hover {
+      background: var(--surface-3);
+      border-color: var(--brand-light);
+      color: #fff;
+    }
+    .tier-card.featured .btn-sponsor {
+      background: linear-gradient(135deg, var(--brand), #5a4bd1);
+      border: none;
+      color: #fff;
+    }
+
+    /* ===== CONTRIBUTE ===== */
+    .contribute-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .contribute-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .contribute-card:hover {
+      border-color: rgba(0,206,201,0.3);
+      transform: translateY(-4px);
+    }
+    .contribute-card .c-icon {
+      font-size: 2.2rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+    .contribute-card h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .contribute-card p { color: var(--text-dim); font-size: 0.88rem; margin-bottom: 1.5rem; }
+
+    /* ===== QUICKSTART ===== */
+    .quickstart {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-width: 720px;
+      margin: 3rem auto 0;
+      overflow: hidden;
+    }
+    .qs-header {
+      padding: 1rem 1.5rem;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .qs-body {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 2.2;
+    }
+    .qs-comment { color: var(--text-dim); }
+    .qs-cmd { color: var(--accent); }
+
+    /* ===== FOOTER ===== */
+    footer {
+      padding: 60px 2rem 40px;
+      border-top: 1px solid var(--border);
+    }
+    .footer-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 3rem;
+    }
+    .footer-brand p { color: var(--text-dim); font-size: 0.9rem; margin-top: 0.8rem; max-width: 300px; }
+    .footer-links h5 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+    .footer-links ul { list-style: none; }
+    .footer-links li { margin-bottom: 0.6rem; }
+    .footer-links a {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: #fff; }
+    .footer-bottom {
+      max-width: var(--max-w);
+      margin: 3rem auto 0;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+    .footer-social { display: flex; gap: 1rem; }
+    .footer-social a {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .footer-social a:hover {
+      background: var(--surface-3);
+      border-color: var(--brand-light);
+    }
+    .footer-social svg { width: 18px; height: 18px; fill: var(--text-dim); }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 968px) {
+      .workflow-grid,
+      .features-grid,
+      .class-grid,
+      .sponsor-tiers,
+      .contribute-cards { grid-template-columns: repeat(2, 1fr); }
+      .commands-grid { grid-template-columns: 1fr; }
+      .vision-content { grid-template-columns: 1fr; gap: 2rem; }
+    }
+    @media (max-width: 640px) {
+      section { padding: 70px 1.2rem; }
+      .nav-links { display: none; }
+      .hamburger { display: block; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 72px;
+        left: 0;
+        right: 0;
+        background: rgba(10,10,15,0.95);
+        backdrop-filter: blur(20px);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid var(--border);
+        gap: 1.2rem;
+      }
+      .workflow-grid,
+      .features-grid,
+      .class-grid,
+      .sponsor-tiers,
+      .contribute-cards { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 2.4rem; letter-spacing: -1px; }
+      .footer-inner { flex-direction: column; }
+      .footer-bottom { flex-direction: column; gap: 1rem; text-align: center; }
+    }
+
+    /* Typing animation */
+    .typing-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 18px;
+      background: var(--accent);
+      margin-left: 2px;
+      animation: blink 1s infinite;
+      vertical-align: middle;
+    }
+    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+    /* Stat counter */
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      margin-top: 3rem;
+      padding-top: 3rem;
+      border-top: 1px solid var(--border);
+      animation: fadeUp 0.8s ease 0.5s both;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--brand-light), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--text-dim); margin-top: 2px; }
+
+    /* Install bar */
+    .install-bar {
+      display: inline-flex;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      gap: 12px;
+      margin-top: 2rem;
+      animation: fadeUp 0.8s ease 0.35s both;
+    }
+    .install-bar .dollar { color: var(--text-dim); }
+    .install-bar code { color: var(--accent); }
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+    .copy-btn:hover { color: #fff; border-color: var(--brand-light); }
+  </style>
+</head>
+<body>
+  <!-- Background effects -->
+  <div class="bg-grid"></div>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <!-- ===== NAVBAR ===== -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="logo">
+        <div class="logo-icon">⚡</div>
+        Dispatch
+      </a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#commands">Commands</a></li>
+        <li><a href="#vision">Vision</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#sponsor">Sponsor</a></li>
+        <li><a href="https://buymeacoffee.com/nomadicmehul" target="_blank" style="color:var(--yellow);">☕ Buy Me a Coffee</a></li>
+        <li><a href="https://github.com/nomadicmehul/dispatch" target="_blank" class="nav-cta">GitHub</a></li>
+      </ul>
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===== HERO ===== -->
+  <section class="hero" id="hero">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        v0.1.0 &mdash; Now available on npm
+      </div>
+      <h1>Solve GitHub Issues<br/><span class="gradient">While You Sleep</span></h1>
+      <p>Dispatch is an AI-powered CLI that automatically solves your GitHub issues in batch, creates branches, and opens pull requests &mdash; all while you rest.</p>
+      <div class="hero-actions">
+        <a href="https://github.com/nomadicmehul/dispatch" target="_blank" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          View on GitHub
+        </a>
+        <a href="#how-it-works" class="btn btn-secondary">Learn More</a>
+      </div>
+      <div class="install-bar">
+        <span class="dollar">$</span>
+        <code>npm install -g dispatch-cli</code>
+        <button class="copy-btn" onclick="copyInstall()" id="copyBtn">Copy</button>
+      </div>
+
+      <!-- Terminal Demo -->
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot red"></div>
+          <div class="terminal-dot yellow"></div>
+          <div class="terminal-dot green"></div>
+          <span class="terminal-title">~/my-project</span>
+        </div>
+        <div class="terminal-body" id="terminalBody"></div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat">
+          <div class="stat-num">6</div>
+          <div class="stat-label">Issue Types</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">10+</div>
+          <div class="stat-label">Issues per Run</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">3x</div>
+          <div class="stat-label">Parallel Workers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">0</div>
+          <div class="stat-label">Manual Effort</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== HOW IT WORKS ===== -->
+  <section id="how-it-works">
+    <div class="container fade-in">
+      <span class="section-label">How It Works</span>
+      <h2 class="section-title">Three steps. Zero effort.</h2>
+      <p class="section-sub">Dispatch automates the entire issue-solving pipeline from classification to pull request.</p>
+      <div class="workflow-grid">
+        <div class="workflow-card">
+          <div class="workflow-step">1</div>
+          <h3>Run Before Bed</h3>
+          <p>Execute <code style="color:var(--accent);">dispatch run</code> in your project directory. Dispatch fetches open issues, classifies them by type, and prioritizes by labels, reactions, and age.</p>
+        </div>
+        <div class="workflow-card">
+          <div class="workflow-step">2</div>
+          <h3>AI Solves Issues</h3>
+          <p>Each issue gets an isolated git worktree. Claude Code analyzes code, implements fixes, writes tests, and commits changes &mdash; processing multiple issues in parallel.</p>
+        </div>
+        <div class="workflow-card">
+          <div class="workflow-step">3</div>
+          <h3>Review PRs at Morning</h3>
+          <p>Wake up to a summary report with all results. High-confidence solutions become regular PRs; uncertain ones are marked as drafts for your careful review.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FEATURES ===== -->
+  <section id="features">
+    <div class="container fade-in">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Built for developer productivity</h2>
+      <p class="section-sub">Every feature is designed to let AI handle the grunt work while you stay in control.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <span class="feature-icon">🧠</span>
+          <h3>Smart Classification</h3>
+          <p>Automatically categorizes issues into 6 types: bug fixes, features, investigations, documentation, audits, and refactors &mdash; each with tailored AI strategies.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🎯</span>
+          <h3>Confidence Scoring</h3>
+          <p>AI self-assesses each solution on a 1-10 scale. High-confidence PRs go straight through; low-confidence ones become drafts for manual review.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">⚡</span>
+          <h3>Parallel Processing</h3>
+          <p>Process multiple issues concurrently with configurable parallelism. Each issue gets an isolated git worktree for safe, conflict-free development.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔒</span>
+          <h3>Safety First</h3>
+          <p>Dry-run mode previews what would happen without making changes. Draft PRs, confidence thresholds, and timeouts keep everything under control.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📊</span>
+          <h3>Morning Reports</h3>
+          <p>Beautiful summary reports show solved vs. failed issues, PR links, confidence scores, and files changed &mdash; everything you need at a glance.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🏷️</span>
+          <h3>Label-Based Priority</h3>
+          <p>Respects P0-P3 priority labels, weighs emoji reactions, and considers issue age to process the most important issues first.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🛠️</span>
+          <h3>Issue Creator</h3>
+          <p>Create well-structured GitHub issues from simple text descriptions or through an interactive guided interview &mdash; powered by AI formatting.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">⚙️</span>
+          <h3>Fully Configurable</h3>
+          <p>Fine-tune with <code style="color:var(--accent);">.dispatchrc.json</code> &mdash; control models, concurrency, timeouts, branch prefixes, label filters, and more.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔌</span>
+          <h3>Extensible Engine</h3>
+          <p>Built with a pluggable AI engine architecture. Currently powered by Claude Code with Gemini and OpenAI adapters on the roadmap.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== COMMANDS ===== -->
+  <section id="commands">
+    <div class="container fade-in">
+      <span class="section-label">CLI Commands</span>
+      <h2 class="section-title">Four commands, infinite productivity</h2>
+      <p class="section-sub">Everything you need to manage issues with AI, from your terminal.</p>
+      <div class="commands-grid">
+        <div class="command-card">
+          <div class="command-name">dispatch run</div>
+          <p>The powerhouse. Fetches issues, classifies them, spins up AI workers, and opens pull requests &mdash; all in one command.</p>
+          <div class="command-flags">
+            <span class="flag">--dry-run</span>
+            <span class="flag">--label</span>
+            <span class="flag">--max-issues</span>
+            <span class="flag">--draft</span>
+            <span class="flag">--model</span>
+            <span class="flag">--concurrency</span>
+            <span class="flag">--base-branch</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch create</div>
+          <p>Create perfectly structured GitHub issues from text descriptions or interactive prompts. AI formats them professionally.</p>
+          <div class="command-flags">
+            <span class="flag">--interactive</span>
+            <span class="flag">--no-post</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch status</div>
+          <p>View a formatted summary of your last run &mdash; solved issues, failed attempts, PR links, and confidence breakdowns.</p>
+          <div class="command-flags">
+            <span class="flag">--json</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch init</div>
+          <p>Set up Dispatch in any repo with an interactive wizard or sensible defaults. Creates your <code style="color:var(--accent);">.dispatchrc.json</code> config.</p>
+          <div class="command-flags">
+            <span class="flag">--yes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CLASSIFICATION ===== -->
+  <section id="classification">
+    <div class="container fade-in">
+      <span class="section-label">Issue Intelligence</span>
+      <h2 class="section-title">AI that understands your issues</h2>
+      <p class="section-sub">Dispatch classifies each issue and applies tailored solving strategies for best results.</p>
+      <div class="class-grid">
+        <div class="class-card">
+          <span class="class-emoji">🐛</span>
+          <div>
+            <h4>Bug Fixes</h4>
+            <p>Identifies bugs, traces root causes, applies targeted fixes, and runs existing tests to verify.</p>
+          </div>
+        </div>
+        <div class="class-card">
+          <span class="class-emoji">✨</span>
+          <div>
+            <h4>Features</h4>
+            <p>Implements new functionality following existing code patterns, architecture, and conventions.</p>
+          </div>
+        </div>
+        <div class="class-card">
+          <span class="class-emoji">🔍</span>
+          <div>
+            <h4>Investigation</h4>
+            <p>Researches codebases, analyzes performance, and delivers findings as documented reports.</p>
+          </div>
+        </div>
+        <div class="class-card">
+          <span class="class-emoji">📝</span>
+          <div>
+            <h4>Documentation</h4>
+            <p>Updates READMEs, writes API docs, adds inline comments, and improves developer guides.</p>
+          </div>
+        </div>
+        <div class="class-card">
+          <span class="class-emoji">🛡️</span>
+          <div>
+            <h4>Security Audits</h4>
+            <p>Reviews code for security, accessibility, and performance issues with detailed findings.</p>
+          </div>
+        </div>
+        <div class="class-card">
+          <span class="class-emoji">♻️</span>
+          <div>
+            <h4>Refactoring</h4>
+            <p>Restructures code for clarity and maintainability while preserving existing behavior.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== VISION ===== -->
+  <section id="vision">
+    <div class="container fade-in">
+      <span class="section-label">Our Vision</span>
+      <h2 class="section-title">The future of issue management</h2>
+      <div class="vision-content">
+        <div class="vision-text">
+          <h3>What if your backlog resolved itself?</h3>
+          <p>We believe AI should handle the routine work so developers can focus on what matters &mdash; designing systems, making architectural decisions, and building features that users love.</p>
+          <p>Dispatch is the first step toward a world where open-source maintainers and teams can scale their impact without scaling their hours.</p>
+          <ul class="vision-list">
+            <li>
+              <span class="vision-check">&#10003;</span>
+              <span><strong>For solo developers</strong> &mdash; multiply your output without burning out. Let AI handle the bug fixes and docs while you focus on the big picture.</span>
+            </li>
+            <li>
+              <span class="vision-check">&#10003;</span>
+              <span><strong>For open-source maintainers</strong> &mdash; keep up with the issue backlog. Dispatch triages, classifies, and resolves issues so contributors can focus on reviews.</span>
+            </li>
+            <li>
+              <span class="vision-check">&#10003;</span>
+              <span><strong>For teams</strong> &mdash; automate the routine so your engineers stay focused on high-impact work. Review AI-generated PRs instead of writing them from scratch.</span>
+            </li>
+          </ul>
+        </div>
+        <div class="vision-graphic">
+          <div class="big-quote">&ldquo;Run it at night.<br/><span class="gradient">Review PRs in the morning.</span>&rdquo;</div>
+          <p>That's the Dispatch philosophy. We're building toward a future where AI is your most reliable team member &mdash; one that never sleeps, never complains, and always ships clean code.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ROADMAP ===== -->
+  <section id="roadmap">
+    <div class="container fade-in">
+      <span class="section-label">Roadmap</span>
+      <h2 class="section-title">Where we're headed</h2>
+      <p class="section-sub">Dispatch is just getting started. Here's what's coming next.</p>
+      <div class="roadmap-timeline">
+        <div class="roadmap-item">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-phase">Shipped</div>
+          <h4>Core Engine &amp; CLI</h4>
+          <p>Batch issue solving, smart classification, confidence scoring, parallel processing, morning reports, and configurable pipelines.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot active"></div>
+          <div class="roadmap-phase">In Progress</div>
+          <h4>Multi-Engine Support</h4>
+          <p>Gemini CLI and OpenAI adapters &mdash; choose the AI engine that works best for your codebase and budget.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-phase">Next Up</div>
+          <h4>Notifications &amp; Integrations</h4>
+          <p>Slack and Discord notifications when runs complete. GitHub Action for scheduled nightly runs with zero setup.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-phase">Future</div>
+          <h4>Issue Decomposition</h4>
+          <p>Automatically break large, complex issues into smaller sub-tasks that AI can solve independently and more reliably.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-phase">Future</div>
+          <h4>Learning from Reviews</h4>
+          <p>Dispatch learns from your PR review feedback to improve future solutions &mdash; getting smarter with every cycle.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-phase">Future</div>
+          <h4>Web Dashboard</h4>
+          <p>A visual dashboard to browse run history, track trends, see confidence distributions, and manage your Dispatch workflow.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SPONSOR ===== -->
+  <section id="sponsor" class="sponsor-section">
+    <div class="container fade-in">
+      <div class="sponsor-inner">
+        <span class="section-label">Sponsor</span>
+        <h2 class="section-title">Support the project</h2>
+        <p class="section-sub">Dispatch is open source and free to use. Your sponsorship helps fund development, infrastructure, and keeps the project alive.</p>
+        <div class="sponsor-tiers">
+          <div class="tier-card">
+            <span class="tier-emoji">☕</span>
+            <h4>Supporter</h4>
+            <p>Buy us a coffee. Every bit helps keep the lights on and the code flowing.</p>
+            <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+              <a href="https://buymeacoffee.com/nomadicmehul" target="_blank" class="btn-sponsor" style="background:linear-gradient(135deg,#FFDD00,#FF6600);color:#000;border:none;font-weight:700;">☕ Buy Me a Coffee</a>
+              <a href="https://github.com/sponsors/nomadicmehul" target="_blank" class="btn-sponsor">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                GitHub Sponsors
+              </a>
+            </div>
+          </div>
+          <div class="tier-card featured">
+            <span class="tier-emoji">🚀</span>
+            <h4>Backer</h4>
+            <p>Get your name on the README, priority issue support, and early access to new features.</p>
+            <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+              <a href="https://buymeacoffee.com/nomadicmehul" target="_blank" class="btn-sponsor" style="background:linear-gradient(135deg,var(--brand),#5a4bd1);border:none;color:#fff;">☕ Buy Me a Coffee</a>
+              <a href="https://github.com/sponsors/nomadicmehul" target="_blank" class="btn-sponsor">Become a Backer</a>
+            </div>
+          </div>
+          <div class="tier-card">
+            <span class="tier-emoji">🏢</span>
+            <h4>Enterprise</h4>
+            <p>Custom integrations, priority support, and your logo featured on the project website.</p>
+            <a href="mailto:nomadicmehul@gmail.com" class="btn-sponsor">Contact Us</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CONTRIBUTE ===== -->
+  <section id="contribute">
+    <div class="container fade-in">
+      <span class="section-label">Contribute</span>
+      <h2 class="section-title">Join the community</h2>
+      <p class="section-sub">Dispatch is open source. Whether you code, write docs, or share ideas &mdash; we'd love your contribution.</p>
+      <div class="contribute-cards">
+        <div class="contribute-card">
+          <span class="c-icon">💻</span>
+          <h4>Write Code</h4>
+          <p>Pick up an issue, submit a PR, or build a new AI engine adapter. The codebase is TypeScript and well-documented.</p>
+          <a href="https://github.com/nomadicmehul/dispatch/issues" target="_blank" class="btn btn-secondary" style="font-size:0.85rem; padding:10px 20px;">Browse Issues</a>
+        </div>
+        <div class="contribute-card">
+          <span class="c-icon">📖</span>
+          <h4>Improve Docs</h4>
+          <p>Help us write guides, tutorials, and examples. Great documentation makes great software accessible to everyone.</p>
+          <a href="https://github.com/nomadicmehul/dispatch" target="_blank" class="btn btn-secondary" style="font-size:0.85rem; padding:10px 20px;">View Repo</a>
+        </div>
+        <div class="contribute-card">
+          <span class="c-icon">💡</span>
+          <h4>Share Ideas</h4>
+          <p>Have a feature request or found a bug? Open an issue and help shape the future of Dispatch.</p>
+          <a href="https://github.com/nomadicmehul/dispatch/issues/new" target="_blank" class="btn btn-secondary" style="font-size:0.85rem; padding:10px 20px;">Open Issue</a>
+        </div>
+      </div>
+
+      <!-- Quick Start -->
+      <div class="quickstart">
+        <div class="qs-header">Quick Start</div>
+        <div class="qs-body">
+          <div><span class="qs-comment"># Install globally</span></div>
+          <div><span class="qs-cmd">npm install -g dispatch-cli</span></div>
+          <br/>
+          <div><span class="qs-comment"># Initialize in your repo</span></div>
+          <div><span class="qs-cmd">cd your-project && dispatch init</span></div>
+          <br/>
+          <div><span class="qs-comment"># Preview what Dispatch would do</span></div>
+          <div><span class="qs-cmd">dispatch run --dry-run</span></div>
+          <br/>
+          <div><span class="qs-comment"># Let it rip</span></div>
+          <div><span class="qs-cmd">dispatch run</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          Dispatch
+        </div>
+        <p>AI-powered batch issue solver for GitHub. Run it at night, review PRs in the morning.</p>
+      </div>
+      <div class="footer-links">
+        <h5>Project</h5>
+        <ul>
+          <li><a href="https://github.com/nomadicmehul/dispatch" target="_blank">GitHub Repository</a></li>
+          <li><a href="https://www.npmjs.com/package/dispatch-cli" target="_blank">npm Package</a></li>
+          <li><a href="https://github.com/nomadicmehul/dispatch/blob/main/LICENSE" target="_blank">License</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="https://github.com/nomadicmehul/dispatch#readme" target="_blank">Documentation</a></li>
+          <li><a href="https://github.com/nomadicmehul/dispatch/issues" target="_blank">Report a Bug</a></li>
+          <li><a href="#roadmap">Roadmap</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h5>Community</h5>
+        <ul>
+          <li><a href="https://github.com/nomadicmehul/dispatch/issues" target="_blank">Discussions</a></li>
+          <li><a href="https://github.com/sponsors/nomadicmehul" target="_blank">Sponsor</a></li>
+          <li><a href="#contribute">Contribute</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2025 Dispatch. Created by <a href="https://github.com/nomadicmehul" target="_blank" style="color:var(--brand-light);">Mehul Patel</a>. Apache 2.0 License.</span>
+      <div class="footer-social">
+        <a href="https://github.com/nomadicmehul/dispatch" target="_blank" aria-label="GitHub">
+          <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        </a>
+        <a href="https://www.npmjs.com/package/dispatch-cli" target="_blank" aria-label="npm">
+          <svg viewBox="0 0 24 24"><path d="M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z"/></svg>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Mobile menu toggle
+    document.getElementById('hamburger').addEventListener('click', () => {
+      document.getElementById('navLinks').classList.toggle('open');
+    });
+
+    // Copy install command
+    function copyInstall() {
+      navigator.clipboard.writeText('npm install -g dispatch-cli').then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    }
+
+    // Scroll-triggered fade-in
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    // Terminal typing animation
+    const lines = [
+      { text: '$ dispatch run', cls: 't-cmd', delay: 60 },
+      { text: '', cls: '', delay: 400 },
+      { text: '⚡ Dispatch v0.1.0', cls: 't-brand', delay: 30 },
+      { text: '', cls: '', delay: 200 },
+      { text: '  Fetching open issues...', cls: 't-dim', delay: 40 },
+      { text: '  Found 8 issues, classified 6 solvable', cls: 't-dim', delay: 40 },
+      { text: '', cls: '', delay: 300 },
+      { text: '  ✓ #42 Fix auth token refresh     [confidence: 9/10]', cls: 't-success', delay: 35 },
+      { text: '  ✓ #38 Add retry logic to API      [confidence: 8/10]', cls: 't-success', delay: 35 },
+      { text: '  ✓ #35 Update README examples       [confidence: 10/10]', cls: 't-success', delay: 35 },
+      { text: '  ✓ #31 Refactor logger module       [confidence: 7/10]', cls: 't-warn', delay: 35 },
+      { text: '  ✓ #29 Add input validation         [confidence: 8/10]', cls: 't-success', delay: 35 },
+      { text: '  ✓ #27 Fix race condition in cache  [confidence: 6/10]', cls: 't-warn', delay: 35 },
+      { text: '', cls: '', delay: 300 },
+      { text: '  6 PRs created (4 ready, 2 draft)', cls: 't-brand', delay: 30 },
+      { text: '  Run complete. Sweet dreams! 🌙', cls: 't-success', delay: 30 },
+    ];
+
+    const termBody = document.getElementById('terminalBody');
+    let lineIdx = 0;
+
+    function typeLine() {
+      if (lineIdx >= lines.length) {
+        // Add blinking cursor to last line
+        const cursor = document.createElement('span');
+        cursor.className = 'typing-cursor';
+        termBody.lastElementChild?.appendChild(cursor);
+        return;
+      }
+      const { text, cls, delay } = lines[lineIdx];
+      const div = document.createElement('div');
+      div.className = 't-line';
+      termBody.appendChild(div);
+
+      if (!text) {
+        div.innerHTML = '&nbsp;';
+        lineIdx++;
+        setTimeout(typeLine, delay);
+        return;
+      }
+
+      let charIdx = 0;
+      function typeChar() {
+        if (charIdx < text.length) {
+          div.innerHTML = `<span class="${cls}">${text.slice(0, charIdx + 1)}</span>`;
+          charIdx++;
+          setTimeout(typeChar, delay);
+        } else {
+          lineIdx++;
+          setTimeout(typeLine, 200);
+        }
+      }
+      typeChar();
+    }
+
+    // Start terminal animation when visible
+    const termObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setTimeout(typeLine, 800);
+        termObserver.disconnect();
+      }
+    }, { threshold: 0.3 });
+    termObserver.observe(document.querySelector('.terminal'));
+  </script>
+</body>
+</html>
