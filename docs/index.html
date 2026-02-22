@@ -560,9 +560,11 @@
     .sponsor-inner .section-sub { margin-left: auto; margin-right: auto; }
     .sponsor-tiers {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 1.5rem;
       margin-top: 2rem;
+      max-width: 800px;
+      margin-inline: auto;
     }
     .tier-card {
       background: var(--surface);
@@ -739,7 +741,6 @@
       .workflow-grid,
       .features-grid,
       .class-grid,
-      .sponsor-tiers,
       .contribute-cards { grid-template-columns: repeat(2, 1fr); }
       .commands-grid { grid-template-columns: 1fr; }
       .vision-content { grid-template-columns: 1fr; gap: 2rem; }
@@ -1207,7 +1208,7 @@
               <a href="https://github.com/sponsors/nomadicmehul" target="_blank" class="btn-sponsor">Become a Backer</a>
             </div>
           </div>
-          <div class="tier-card">
+          <div class="tier-card" style="display: none;">
             <span class="tier-emoji">🏢</span>
             <h4>Enterprise</h4>
             <p>Custom integrations, priority support, and your logo featured on the project website.</p>
