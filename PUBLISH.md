@@ -4,7 +4,30 @@ Reference guide for publishing `dispatch-cli` across all major package managers.
 
 ---
 
-## 1. npm / npx (Do First)
+## 1. Automated Publishing (with GitHub Actions)
+
+We've set up a GitHub Action to automatically publish `dispatch-cli` to npm whenever a new version tag is pushed.
+
+### One-time Setup:
+1.  **Add npm token to GitHub**:
+    *   Generate a "Classic" or "Granular" access token (Automation scope) on [npmjs.com](https://www.npmjs.com/settings/mehul/tokens).
+    *   Add it to your GitHub repository: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`.
+    *   Name it `NPM_TOKEN`.
+
+### To Publish a New Version:
+Simply run:
+
+```bash
+# Bump version and create a commit/tag (e.g. 0.1.0 -> 0.1.1)
+npm version patch
+
+# Push the tag to GitHub
+git push origin main --follow-tags
+```
+
+---
+
+## 2. Manual npm / npx (Backup)
 
 ### Prerequisites
 - npm account at [npmjs.com](https://www.npmjs.com)
