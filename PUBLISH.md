@@ -1,14 +1,49 @@
 # Dispatch — Publishing & Distribution Guide
 
-Reference guide for publishing `dispatch-cli` across all major package managers.
+Reference guide for publishing `dispatch-ai` across all major package managers.
 
 ---
 
-## 1. npm / npx (Do First)
+## 1. Publishing (with GitHub Actions)
+
+We've set up a GitHub Action (`.github/workflows/publish.yml`) to publish `dispatch-ai` to npm. There are two ways to trigger it:
+
+### One-time Setup:
+1.  **Add npm token to GitHub**:
+    *   Generate a "Classic" or "Granular" access token (Automation scope) on [npmjs.com](https://www.npmjs.com/settings/mehul/tokens).
+    *   Add it to your GitHub repository: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`.
+    *   Name it `NPM_TOKEN`.
+
+### Option A: Automatic (via version tag)
+
+Push a version tag and the workflow fires automatically — no UI needed.
+
+```bash
+# Bump version and create a commit/tag (e.g. 0.1.0 -> 0.1.1)
+npm version patch
+
+# Push the tag to GitHub — this triggers the publish workflow
+git push origin main --follow-tags
+```
+
+> **Note:** A normal `git push` without a tag does **not** trigger publishing. Only tags starting with `v` (e.g. `v0.1.1`) trigger it.
+
+### Option B: Manual (via GitHub Actions UI)
+
+Useful for testing or publishing from a feature branch.
+
+1. Go to GitHub → **Actions** tab → **"Publish to npm"** → **"Run workflow"**
+2. Select the branch
+3. **Dry run ON** (default) — builds, tests, and packs without publishing (for testing)
+4. **Dry run OFF** — actually publishes to npm
+
+---
+
+## 2. Manual npm / npx (Backup)
 
 ### Prerequisites
 - npm account at [npmjs.com](https://www.npmjs.com)
-- Check name availability: `npm search dispatch-cli`
+- Check name availability: `npm search dispatch-ai`
 - Fallback names: `@mehul/dispatch`, `dispatch-ai`, `dispatch-issues`
 
 ### Publish
@@ -30,10 +65,10 @@ npm publish --access public
 
 ```bash
 # Run without installing
-npx dispatch-cli run
+npx dispatch-ai run
 
 # Or install globally
-npm install -g dispatch-cli
+npm install -g dispatch-ai
 dispatch run
 ```
 
@@ -67,10 +102,10 @@ npm run build
 
 # Create tarball
 npm pack
-# Produces: dispatch-cli-0.1.0.tgz
+# Produces: dispatch-ai-0.1.0.tgz
 
 # Create GitHub release (requires gh CLI)
-gh release create v0.1.0 dispatch-cli-0.1.0.tgz \
+gh release create v0.1.0 dispatch-ai-0.1.0.tgz \
   --title "Dispatch v0.1.0" \
   --notes "Initial release — AI-powered batch issue solver"
 ```
@@ -79,7 +114,7 @@ gh release create v0.1.0 dispatch-cli-0.1.0.tgz \
 
 ```bash
 # Download and install from release
-npm install -g https://github.com/mehulpatel/dispatch/releases/download/v0.1.0/dispatch-cli-0.1.0.tgz
+npm install -g https://github.com/mehulpatel/dispatch/releases/download/v0.1.0/dispatch-ai-0.1.0.tgz
 ```
 
 ---
@@ -96,9 +131,9 @@ npm install -g https://github.com/mehulpatel/dispatch/releases/download/v0.1.0/d
 class Dispatch < Formula
   desc "AI-powered batch GitHub issue solver — dispatch issues, receive PRs"
   homepage "https://github.com/mehulpatel/dispatch"
-  url "https://registry.npmjs.org/dispatch-cli/-/dispatch-cli-0.1.0.tgz"
+  url "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz"
   sha256 "REPLACE_WITH_ACTUAL_SHA256"
-  license "MIT"
+  license "Apache-2.0 WITH Commons-Clause"
 
   depends_on "node@20"
 
@@ -116,7 +151,7 @@ end
 **Step 3:** Generate SHA256:
 
 ```bash
-shasum -a 256 dispatch-cli-0.1.0.tgz
+shasum -a 256 dispatch-ai-0.1.0.tgz
 ```
 
 ### Users install with:
@@ -148,9 +183,9 @@ Submit PR to [homebrew-core](https://github.com/Homebrew/homebrew-core) once the
   "version": "0.1.0",
   "description": "AI-powered batch GitHub issue solver",
   "homepage": "https://github.com/mehulpatel/dispatch",
-  "license": "MIT",
+  "license": "Apache-2.0 WITH Commons-Clause",
   "depends": "nodejs",
-  "url": "https://registry.npmjs.org/dispatch-cli/-/dispatch-cli-0.1.0.tgz",
+  "url": "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz",
   "hash": "REPLACE_WITH_SHA256",
   "installer": {
     "script": "npm install -g $dir/package"
@@ -174,15 +209,15 @@ scoop install dispatch
 
 ```bash
 # Maintainer: Mehul Patel <mehul.patel@buildingminds.com>
-pkgname=dispatch-cli
+pkgname=dispatch-ai
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="AI-powered batch GitHub issue solver"
 arch=('any')
 url="https://github.com/mehulpatel/dispatch"
-license=('MIT')
+license=('Apache-2.0 WITH Commons-Clause')
 depends=('nodejs>=20')
-source=("https://registry.npmjs.org/dispatch-cli/-/dispatch-cli-${pkgver}.tgz")
+source=("https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-${pkgver}.tgz")
 sha256sums=('REPLACE_WITH_SHA256')
 
 package() {
@@ -195,9 +230,9 @@ Submit to [AUR](https://aur.archlinux.org/).
 ### Users install with:
 
 ```bash
-yay -S dispatch-cli
+yay -S dispatch-ai
 # or
-paru -S dispatch-cli
+paru -S dispatch-ai
 ```
 
 ---
@@ -220,7 +255,7 @@ paru -S dispatch-cli
       let pkgs = nixpkgs.legacyPackages.${system};
       in {
         packages.default = pkgs.buildNpmPackage {
-          pname = "dispatch-cli";
+          pname = "dispatch-ai";
           version = "0.1.0";
           src = ./.;
           npmDepsHash = "REPLACE_WITH_HASH";
@@ -246,7 +281,7 @@ nix profile install github:mehulpatel/dispatch
 ```dockerfile
 FROM node:20-alpine
 
-RUN npm install -g dispatch-cli
+RUN npm install -g dispatch-ai
 
 # Ensure claude CLI is available
 # Users mount their Claude Code config
@@ -261,7 +296,7 @@ ENTRYPOINT ["dispatch"]
 ```bash
 docker run -v $(pwd):/repo -v ~/.claude:/root/.claude \
   -e GITHUB_TOKEN=$GITHUB_TOKEN \
-  dispatch-cli run
+  dispatch-ai run
 ```
 
 ---
@@ -355,7 +390,7 @@ This is the approach used by `gh` CLI, `lazygit`, `act`, and `age`.
 
 ## Checklist Before First Publish
 
-- [ ] Verify `dispatch-cli` name is available on npmjs.com
+- [ ] Verify `dispatch-ai` name is available on npmjs.com
 - [ ] Update `package.json` with correct GitHub repo URL
 - [ ] Add `repository`, `bugs`, and `homepage` fields to `package.json`
 - [ ] Ensure `README.md` has badges (npm version, license, downloads)

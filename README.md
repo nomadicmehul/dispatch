@@ -1,5 +1,10 @@
 # ⚡ Dispatch
 
+[![npm version](https://img.shields.io/npm/v/dispatch-ai.svg)](https://www.npmjs.com/package/dispatch-ai)
+[![npm downloads](https://img.shields.io/npm/dm/dispatch-ai.svg)](https://www.npmjs.com/package/dispatch-ai)
+[![License](https://img.shields.io/badge/License-Apache%202.0%20WITH%20Commons--Clause-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org)
+
 **Dispatch your GitHub issues. Receive pull requests.**
 
 Dispatch is an AI-powered CLI tool that solves GitHub issues in batch — creating branches, implementing fixes, and opening pull requests while you sleep.
@@ -10,7 +15,7 @@ Run it at night. Review PRs in the morning.
 
 ```bash
 # Install
-npm install -g dispatch-cli
+npm install -g dispatch-ai
 
 # Initialize config in your repo
 cd your-repo

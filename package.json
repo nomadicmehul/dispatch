@@ -1,5 +1,5 @@
 {
-  "name": "dispatch-cli",
+  "name": "dispatch-ai",
   "version": "0.1.0",
   "description": "Dispatch your GitHub issues. Receive pull requests. AI-powered batch issue solver.",
   "author": "Mehul Patel <nomadicmehul@gmail.com>",
@@ -10,15 +10,22 @@
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
   "files": [
-    "dist"
+    "dist/bin",
+    "dist/src"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/bin/dispatch.js",
     "lint": "tsc --noEmit",
-    "test": "node --test dist/test/**/*.test.js",
+    "test": "node --test dist/test/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
