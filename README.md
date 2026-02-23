@@ -10,7 +10,7 @@ Run it at night. Review PRs in the morning.
 
 ```bash
 # Install
-npm install -g dispatch-cli
+npm install -g dispatch-ai
 
 # Initialize config in your repo
 cd your-repo
