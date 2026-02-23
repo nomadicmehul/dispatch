@@ -4,9 +4,9 @@ Reference guide for publishing `dispatch-ai` across all major package managers.
 
 ---
 
-## 1. Automated Publishing (with GitHub Actions)
+## 1. Publishing (with GitHub Actions)
 
-We've set up a GitHub Action to automatically publish `dispatch-ai` to npm whenever a new version tag is pushed.
+We've set up a GitHub Action (`.github/workflows/publish.yml`) to publish `dispatch-ai` to npm. There are two ways to trigger it:
 
 ### One-time Setup:
 1.  **Add npm token to GitHub**:
@@ -14,16 +14,28 @@ We've set up a GitHub Action to automatically publish `dispatch-ai` to npm whene
     *   Add it to your GitHub repository: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`.
     *   Name it `NPM_TOKEN`.
 
-### To Publish a New Version:
-Simply run:
+### Option A: Automatic (via version tag)
+
+Push a version tag and the workflow fires automatically — no UI needed.
 
 ```bash
 # Bump version and create a commit/tag (e.g. 0.1.0 -> 0.1.1)
 npm version patch
 
-# Push the tag to GitHub
+# Push the tag to GitHub — this triggers the publish workflow
 git push origin main --follow-tags
 ```
+
+> **Note:** A normal `git push` without a tag does **not** trigger publishing. Only tags starting with `v` (e.g. `v0.1.1`) trigger it.
+
+### Option B: Manual (via GitHub Actions UI)
+
+Useful for testing or publishing from a feature branch.
+
+1. Go to GitHub → **Actions** tab → **"Publish to npm"** → **"Run workflow"**
+2. Select the branch
+3. **Dry run ON** (default) — builds, tests, and packs without publishing (for testing)
+4. **Dry run OFF** — actually publishes to npm
 
 ---
 
