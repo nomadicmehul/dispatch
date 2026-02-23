@@ -121,7 +121,7 @@ class Dispatch < Formula
   homepage "https://github.com/mehulpatel/dispatch"
   url "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz"
   sha256 "REPLACE_WITH_ACTUAL_SHA256"
-  license "MIT"
+  license "Apache-2.0 WITH Commons-Clause"
 
   depends_on "node@20"
 
@@ -171,7 +171,7 @@ Submit PR to [homebrew-core](https://github.com/Homebrew/homebrew-core) once the
   "version": "0.1.0",
   "description": "AI-powered batch GitHub issue solver",
   "homepage": "https://github.com/mehulpatel/dispatch",
-  "license": "MIT",
+  "license": "Apache-2.0 WITH Commons-Clause",
   "depends": "nodejs",
   "url": "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz",
   "hash": "REPLACE_WITH_SHA256",
@@ -203,7 +203,7 @@ pkgrel=1
 pkgdesc="AI-powered batch GitHub issue solver"
 arch=('any')
 url="https://github.com/mehulpatel/dispatch"
-license=('MIT')
+license=('Apache-2.0 WITH Commons-Clause')
 depends=('nodejs>=20')
 source=("https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-${pkgver}.tgz")
 sha256sums=('REPLACE_WITH_SHA256')
