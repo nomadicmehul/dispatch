@@ -1,5 +1,5 @@
 {
-  "name": "dispatch-cli",
+  "name": "dispatch-ai",
   "version": "0.1.0",
   "description": "Dispatch your GitHub issues. Receive pull requests. AI-powered batch issue solver.",
   "author": "Mehul Patel <nomadicmehul@gmail.com>",
