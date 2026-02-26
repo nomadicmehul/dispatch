@@ -4,6 +4,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/dispatch-ai.svg)](https://www.npmjs.com/package/dispatch-ai)
 [![License](https://img.shields.io/badge/License-Apache%202.0%20WITH%20Commons--Clause-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org)
+[![Beta](https://img.shields.io/badge/status-🧪_beta-blueviolet)](https://github.com/nomadicmehul/dispatch)
+
+> **🧪 Beta** — Dispatch is under active development. APIs and behavior may change between releases.
 
 **Dispatch your GitHub issues. Receive pull requests.**
 

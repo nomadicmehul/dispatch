@@ -171,6 +171,22 @@
       border-radius: 50%;
       animation: pulse 2s infinite;
     }
+    .beta-tag {
+      background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-left: 6px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      animation: betaGlow 2s ease-in-out infinite alternate;
+    }
+    @keyframes betaGlow {
+      0% { box-shadow: 0 0 4px var(--brand-glow); }
+      100% { box-shadow: 0 0 12px var(--brand-glow), 0 0 24px rgba(162,155,254,0.2); }
+    }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
     .hero h1 {
@@ -870,7 +886,8 @@
     <div class="hero-content">
       <div class="hero-badge">
         <span class="dot"></span>
-        v0.1.0 &mdash; Now available on npm
+        v0.1.0-beta &mdash; Now available on npm
+        <span class="beta-tag">🧪 BETA</span>
       </div>
       <h1>Solve GitHub Issues<br/><span class="gradient">While You Sleep</span></h1>
       <p>Dispatch is an AI-powered CLI that automatically solves your GitHub issues in batch, creates branches, and opens pull requests &mdash; all while you rest.</p>
@@ -1338,7 +1355,7 @@
     const lines = [
       { text: '$ dispatch run', cls: 't-cmd', delay: 60 },
       { text: '', cls: '', delay: 400 },
-      { text: '⚡ Dispatch v0.1.0', cls: 't-brand', delay: 30 },
+      { text: '⚡ Dispatch v0.1.0-beta', cls: 't-brand', delay: 30 },
       { text: '', cls: '', delay: 200 },
       { text: '  Fetching open issues...', cls: 't-dim', delay: 40 },
       { text: '  Found 8 issues, classified 6 solvable', cls: 't-dim', delay: 40 },
