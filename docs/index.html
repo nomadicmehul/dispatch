@@ -900,7 +900,7 @@
       </div>
       <div class="install-bar">
         <span class="dollar">$</span>
-        <code>npm install -g dispatch-ai</code>
+        <code>npm install -g dispatch-ai@beta</code>
         <button class="copy-btn" onclick="copyInstall()" id="copyBtn">Copy</button>
       </div>
 
@@ -1262,8 +1262,8 @@
       <div class="quickstart">
         <div class="qs-header">Quick Start</div>
         <div class="qs-body">
-          <div><span class="qs-comment"># Install globally</span></div>
-          <div><span class="qs-cmd">npm install -g dispatch-ai</span></div>
+          <div><span class="qs-comment"># Install globally (beta)</span></div>
+          <div><span class="qs-cmd">npm install -g dispatch-ai@beta</span></div>
           <br/>
           <div><span class="qs-comment"># Initialize in your repo</span></div>
           <div><span class="qs-cmd">cd your-project && dispatch init</span></div>
@@ -1334,7 +1334,7 @@
 
     // Copy install command
     function copyInstall() {
-      navigator.clipboard.writeText('npm install -g dispatch-ai').then(() => {
+      navigator.clipboard.writeText('npm install -g dispatch-ai@beta').then(() => {
         const btn = document.getElementById('copyBtn');
         btn.textContent = 'Copied!';
         setTimeout(() => btn.textContent = 'Copy', 2000);

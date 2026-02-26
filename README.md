@@ -17,8 +17,8 @@ Run it at night. Review PRs in the morning.
 ## Quick Start
 
 ```bash
-# Install
-npm install -g dispatch-ai
+# Install (beta)
+npm install -g dispatch-ai@beta
 
 # Initialize config in your repo
 cd your-repo
@@ -177,7 +177,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
-- [ ] Slack/Discord notifications on run completion
+- [ ] Slack/Discord/Teams notifications on run completion
 - [ ] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)
 - [ ] Learn from PR review feedback
