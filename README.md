@@ -32,6 +32,9 @@ dispatch run
 
 # Preview what would happen (no changes)
 dispatch run --dry-run
+
+# Set up nightly automated runs via GitHub Actions
+dispatch schedule
 ```
 
 ## Commands
@@ -85,6 +88,41 @@ View results from the last run.
 dispatch status          # pretty-printed morning report
 dispatch status --json   # raw JSON output
 ```
+
+### `dispatch schedule`
+
+Generate a GitHub Actions workflow for automated nightly runs.
+
+```bash
+dispatch schedule                          # default: runs daily at 2 AM UTC
+dispatch schedule --time midnight          # run at midnight UTC
+dispatch schedule --time 3am              # run at 3 AM UTC
+dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UTC
+dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
+dispatch schedule --label bug             # only process issues labeled "bug"
+dispatch schedule --stdout                # print workflow YAML without writing file
+```
+
+**What happens:**
+1. Generates a `.github/workflows/dispatch-nightly.yml` file
+2. The workflow installs Claude Code and Dispatch on a GitHub Actions runner
+3. Runs `dispatch run` on your configured schedule
+4. Supports manual triggering from the GitHub Actions UI (`workflow_dispatch`)
+5. Uploads `.dispatch/` logs as artifacts (retained 30 days)
+
+**Required setup after running:**
+1. Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) (`GITHUB_TOKEN` is auto-provided)
+2. Commit and push the workflow file
+3. Optionally trigger a manual run from the **Actions** tab
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--time <time>` | Time to run in UTC (`2am`, `03:00`, `midnight`, `noon`) | `2am` |
+| `--cron <expr>` | Custom cron expression (overrides `--time`) | — |
+| `--max-issues <n>` | Max issues per run | `10` |
+| `--draft` | Create PRs as drafts | `false` |
+| `--label <labels...>` | Only process issues with these labels | — |
+| `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch init`
 
@@ -161,7 +199,7 @@ After solving each issue, the AI self-assesses its confidence (1-10):
 
 ```
 dispatch CLI
-├── Commands (run, create, status, init)
+├── Commands (run, create, status, init, schedule)
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
@@ -178,7 +216,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
 - [ ] Slack/Discord/Teams notifications on run completion
-- [ ] GitHub Action for scheduled runs
+- [x] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)
 - [ ] Learn from PR review feedback
 - [ ] Parallel issue solving
