@@ -34,7 +34,12 @@ registerInitCommand(program);
 // Default action (no subcommand)
 program.action(() => {
   console.log();
-  console.log(chalk.bold.cyan("  ⚡ dispatch") + chalk.gray(" — AI-powered issue solver"));
+  console.log(
+    chalk.bold.cyan("  ⚡ dispatch") +
+    chalk.gray(" — AI-powered issue solver") +
+    "  " +
+    chalk.bgYellow.black(" BETA ")
+  );
   console.log();
   console.log(chalk.gray("  Dispatch your issues. Receive pull requests."));
   console.log();
