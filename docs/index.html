@@ -171,6 +171,40 @@
       border-radius: 50%;
       animation: pulse 2s infinite;
     }
+    .beta-floating {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: fit-content;
+      margin: 0 auto 1rem;
+      background: linear-gradient(135deg, #6c5ce7, #5a4bd1, #a29bfe);
+      background-size: 200% 200%;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 5px 16px;
+      border-radius: 100px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      animation: fadeUp 0.6s ease, betaShimmer 3s ease-in-out infinite, betaGlow 2s ease-in-out infinite alternate;
+    }
+    .beta-floating .beta-dot {
+      width: 6px; height: 6px;
+      background: #55efc4;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes betaShimmer {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes betaGlow {
+      0% { box-shadow: 0 0 8px var(--brand-glow); }
+      100% { box-shadow: 0 0 20px var(--brand-glow), 0 0 40px rgba(162,155,254,0.15); }
+    }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
     .hero h1 {
@@ -868,9 +902,13 @@
   <!-- ===== HERO ===== -->
   <section class="hero" id="hero">
     <div class="hero-content">
+      <div class="beta-floating">
+        <span class="beta-dot"></span>
+        🧪 BETA
+      </div>
       <div class="hero-badge">
         <span class="dot"></span>
-        v0.1.0 &mdash; Now available on npm
+        v0.1.0-beta &mdash; Now available on npm
       </div>
       <h1>Solve GitHub Issues<br/><span class="gradient">While You Sleep</span></h1>
       <p>Dispatch is an AI-powered CLI that automatically solves your GitHub issues in batch, creates branches, and opens pull requests &mdash; all while you rest.</p>
@@ -883,7 +921,7 @@
       </div>
       <div class="install-bar">
         <span class="dollar">$</span>
-        <code>npm install -g dispatch-ai</code>
+        <code>npm install -g dispatch-ai@beta</code>
         <button class="copy-btn" onclick="copyInstall()" id="copyBtn">Copy</button>
       </div>
 
@@ -1245,8 +1283,8 @@
       <div class="quickstart">
         <div class="qs-header">Quick Start</div>
         <div class="qs-body">
-          <div><span class="qs-comment"># Install globally</span></div>
-          <div><span class="qs-cmd">npm install -g dispatch-ai</span></div>
+          <div><span class="qs-comment"># Install globally (beta)</span></div>
+          <div><span class="qs-cmd">npm install -g dispatch-ai@beta</span></div>
           <br/>
           <div><span class="qs-comment"># Initialize in your repo</span></div>
           <div><span class="qs-cmd">cd your-project && dispatch init</span></div>
@@ -1317,7 +1355,7 @@
 
     // Copy install command
     function copyInstall() {
-      navigator.clipboard.writeText('npm install -g dispatch-ai').then(() => {
+      navigator.clipboard.writeText('npm install -g dispatch-ai@beta').then(() => {
         const btn = document.getElementById('copyBtn');
         btn.textContent = 'Copied!';
         setTimeout(() => btn.textContent = 'Copy', 2000);
@@ -1338,7 +1376,7 @@
     const lines = [
       { text: '$ dispatch run', cls: 't-cmd', delay: 60 },
       { text: '', cls: '', delay: 400 },
-      { text: '⚡ Dispatch v0.1.0', cls: 't-brand', delay: 30 },
+      { text: '⚡ Dispatch v0.1.0-beta', cls: 't-brand', delay: 30 },
       { text: '', cls: '', delay: 200 },
       { text: '  Fetching open issues...', cls: 't-dim', delay: 40 },
       { text: '  Found 8 issues, classified 6 solvable', cls: 't-dim', delay: 40 },

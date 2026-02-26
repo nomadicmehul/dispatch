@@ -4,6 +4,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/dispatch-ai.svg)](https://www.npmjs.com/package/dispatch-ai)
 [![License](https://img.shields.io/badge/License-Apache%202.0%20WITH%20Commons--Clause-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org)
+[![Beta](https://img.shields.io/badge/status-🧪_beta-blueviolet)](https://github.com/nomadicmehul/dispatch)
+
+> **🧪 Beta** — Dispatch is under active development. APIs and behavior may change between releases.
 
 **Dispatch your GitHub issues. Receive pull requests.**
 
@@ -14,8 +17,8 @@ Run it at night. Review PRs in the morning.
 ## Quick Start
 
 ```bash
-# Install
-npm install -g dispatch-ai
+# Install (beta)
+npm install -g dispatch-ai@beta
 
 # Initialize config in your repo
 cd your-repo
@@ -174,7 +177,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
-- [ ] Slack/Discord notifications on run completion
+- [ ] Slack/Discord/Teams notifications on run completion
 - [ ] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)
 - [ ] Learn from PR review feedback
