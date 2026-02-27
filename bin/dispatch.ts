@@ -9,6 +9,7 @@ import { registerRunCommand } from "../src/commands/run.js";
 import { registerCreateCommand } from "../src/commands/create.js";
 import { registerStatusCommand } from "../src/commands/status.js";
 import { registerInitCommand } from "../src/commands/init.js";
+import { registerStatsCommand } from "../src/commands/stats.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8"));
@@ -30,6 +31,7 @@ registerRunCommand(program);
 registerCreateCommand(program);
 registerStatusCommand(program);
 registerInitCommand(program);
+registerStatsCommand(program);
 
 // Default action (no subcommand)
 program.action(() => {
@@ -47,6 +49,7 @@ program.action(() => {
   console.log(`  ${chalk.yellow("dispatch create")}     Create well-structured issues`);
   console.log(`  ${chalk.yellow("dispatch status")}     View last run summary`);
   console.log(`  ${chalk.yellow("dispatch init")}       Initialize config for this repo`);
+  console.log(`  ${chalk.yellow("dispatch stats")}      View historical run statistics`);
   console.log();
   console.log(chalk.gray("  Run dispatch --help for full options."));
   console.log();

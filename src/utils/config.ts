@@ -30,6 +30,8 @@ export interface DispatchConfig {
   timeoutPerIssue: number;
   /** Number of issues to process in parallel (default: 3) */
   concurrency: number;
+  /** Enable anonymous telemetry (default: true). Set to false to opt out of remote analytics. */
+  telemetry: boolean;
 }
 
 const DEFAULT_CONFIG: DispatchConfig = {
@@ -47,6 +49,7 @@ const DEFAULT_CONFIG: DispatchConfig = {
   stateDir: ".dispatch",
   timeoutPerIssue: 10 * 60 * 1000, // 10 minutes
   concurrency: 3,
+  telemetry: true,
 };
 
 const CONFIG_FILENAME = ".dispatchrc.json";
@@ -58,9 +61,13 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<DispatchC
     await access(configPath);
     const raw = await readFile(configPath, "utf-8");
     const fileConfig = JSON.parse(raw) as Partial<DispatchConfig>;
-    return { ...DEFAULT_CONFIG, ...fileConfig };
+    const config = { ...DEFAULT_CONFIG, ...fileConfig };
+    if (process.env.DISPATCH_NO_TELEMETRY === "1") config.telemetry = false;
+    return config;
   } catch {
-    return { ...DEFAULT_CONFIG };
+    const config = { ...DEFAULT_CONFIG };
+    if (process.env.DISPATCH_NO_TELEMETRY === "1") config.telemetry = false;
+    return config;
   }
 }
 
@@ -82,6 +89,7 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
   if (options.draft !== undefined) merged.createDraftPRs = Boolean(options.draft);
   if (options.baseBranch) merged.baseBranch = String(options.baseBranch);
   if (options.concurrency) merged.concurrency = Number(options.concurrency);
+  if (options.noTelemetry) merged.telemetry = false;
 
   return merged;
 }

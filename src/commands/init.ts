@@ -78,6 +78,12 @@ export function registerInitCommand(program: Command) {
               message: "Create draft PRs by default?",
               default: false,
             },
+            {
+              type: "confirm",
+              name: "telemetry",
+              message: "Send anonymous usage analytics? (helps improve dispatch)",
+              default: true,
+            },
           ]);
 
           config = {
