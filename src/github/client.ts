@@ -92,13 +92,15 @@ export class GitHubClient {
     }
 
     // Use pagination to handle maxIssues > 100
+    let collected = 0;
     const issues = await this.octokit.paginate(
       this.octokit.issues.listForRepo,
       params as Parameters<Octokit["issues"]["listForRepo"]>[0],
       (response, done) => {
         const items = response.data;
-        // Stop paginating once we have enough
-        if (items.length >= maxIssues) {
+        collected += items.length;
+        // Stop paginating once cumulative count reaches maxIssues
+        if (collected >= maxIssues) {
           done();
         }
         return items;

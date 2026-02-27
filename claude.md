@@ -21,7 +21,7 @@ Dispatch is an AI-powered CLI tool for solving GitHub issues in batch. It create
 
 ## Architecture Guide
 - `bin/`: CLI entry point
-- `src/commands/`: CLI subcommands (run, create, init, status)
+- `src/commands/`: CLI subcommands (run, create, init, status, schedule)
 - `src/engine/`: AI adapters
 - `src/github/`: GitHub API client (issues, PRs)
 - `src/orchestrator/`: Pipeline, classification, and scoring logic

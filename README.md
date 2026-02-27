@@ -32,6 +32,9 @@ dispatch run
 
 # Preview what would happen (no changes)
 dispatch run --dry-run
+
+# Set up nightly automated runs via GitHub Actions
+dispatch schedule
 ```
 
 ## Commands
@@ -86,6 +89,45 @@ dispatch status          # pretty-printed morning report
 dispatch status --json   # raw JSON output
 ```
 
+### `dispatch schedule`
+
+Generate a GitHub Actions workflow for automated nightly runs.
+
+```bash
+dispatch schedule                          # default: runs daily at 2 AM UTC
+dispatch schedule --time midnight          # run at midnight UTC
+dispatch schedule --time 3am              # run at 3 AM UTC
+dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UTC
+dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
+dispatch schedule --label bug             # only process issues labeled "bug"
+dispatch schedule --auth claude-code      # enterprise: uses Anthropic's GitHub Action (no API key)
+dispatch schedule --stdout                # print workflow YAML without writing file
+```
+
+**What happens:**
+1. Generates a `.github/workflows/dispatch-nightly.yml` file
+2. The workflow installs Claude Code and Dispatch on a GitHub Actions runner
+3. Runs `dispatch run` on your configured schedule
+4. Supports manual triggering from the GitHub Actions UI (`workflow_dispatch`)
+5. Uploads `.dispatch/` logs as artifacts (retained 30 days)
+
+**Required setup after running:**
+1. Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) (`GITHUB_TOKEN` is auto-provided)
+2. Commit and push the workflow file
+3. Optionally trigger a manual run from the **Actions** tab
+
+> **Enterprise users**: Can't create an Anthropic API key? Use `--auth claude-code` to generate a workflow that uses Anthropic's [official GitHub Action](https://github.com/anthropics/claude-code-action) with OIDC auth — no API key needed. See [Authentication Methods](#authentication-methods) below.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--time <time>` | Time to run in UTC (`2am`, `03:00`, `midnight`, `noon`) | `2am` |
+| `--cron <expr>` | Custom cron expression (overrides `--time`) | — |
+| `--max-issues <n>` | Max issues per run | `10` |
+| `--draft` | Create PRs as drafts | `false` |
+| `--label <labels...>` | Only process issues with these labels | — |
+| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise) | `api-key` |
+| `--stdout` | Print YAML to stdout instead of writing file | `false` |
+
 ### `dispatch init`
 
 Initialize configuration for your repository.
@@ -112,7 +154,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
   "autoLabel": true,
   "baseBranch": "main",
   "draftThreshold": 5,
-  "stateDir": ".dispatch"
+  "stateDir": ".dispatch",
+  "timeoutPerIssue": 600000,
+  "concurrency": 3
 }
 ```
 
@@ -129,6 +173,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `autoLabel` | Auto-label issues with classification | `true` |
 | `baseBranch` | Base branch for PRs | `main` |
 | `draftThreshold` | Confidence below this → draft PR | `5` |
+| `stateDir` | Directory for dispatch state/logs | `.dispatch` |
+| `timeoutPerIssue` | Timeout per issue in milliseconds | `600000` (10 min) |
+| `concurrency` | Number of issues to process in parallel | `3` |
 
 ## Issue Types
 
@@ -147,9 +194,47 @@ Dispatch automatically classifies issues and adapts its approach:
 
 After solving each issue, the AI self-assesses its confidence (1-10):
 
-- **8-10**: Regular PR — high confidence, ship it
-- **5-7**: Regular PR with "needs-review" notes
-- **1-4**: Draft PR — significant uncertainty, manual review essential
+- **5-10**: Regular PR — review recommended
+- **1-4**: Draft PR with "needs-review" label — significant uncertainty, manual review essential
+
+## Authentication Methods
+
+Dispatch supports two ways to authenticate Claude in GitHub Actions:
+
+| | Personal Account | Enterprise/Team Account |
+|---|---|---|
+| **Flag** | `--auth api-key` (default) | `--auth claude-code` |
+| **How** | You create an API key at console.anthropic.com | Anthropic's GitHub Action uses OIDC |
+| **Secrets** | `ANTHROPIC_API_KEY` | None (automatic) |
+| **Setup** | ~2 minutes | Ask your Anthropic admin to enable OIDC |
+
+### `api-key` — Personal accounts (default)
+
+Create an API key from your Anthropic account and add it as a GitHub secret.
+
+```bash
+dispatch schedule                    # generates workflow with ANTHROPIC_API_KEY secret
+```
+
+**Setup:**
+1. Create an API key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+2. Add it as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) named `ANTHROPIC_API_KEY`
+3. Commit and push the workflow file
+
+### `claude-code` — Enterprise/team accounts
+
+Uses Anthropic's official [`claude-code-action`](https://github.com/anthropics/claude-code-action) GitHub Action. Authenticates via **OIDC** (OpenID Connect) — your org's Anthropic plan is used directly. No API key needed.
+
+```bash
+dispatch schedule --auth claude-code  # generates workflow using Anthropic's official action
+```
+
+**Setup:**
+1. Your Anthropic admin enables OIDC trust between GitHub and your org's Anthropic account
+2. Commit and push the workflow file
+3. That's it — the action handles auth automatically
+
+**Why this exists:** Enterprise Claude Code users authenticate locally via interactive OAuth (browser login). That works great for development, but CI environments can't open a browser. The `claude-code-action` solves this by using GitHub's OIDC token provider to authenticate with Anthropic — same org plan, no separate API key required.
 
 ## Prerequisites
 
@@ -161,12 +246,12 @@ After solving each issue, the AI self-assesses its confidence (1-10):
 
 ```
 dispatch CLI
-├── Commands (run, create, status, init)
+├── Commands (run, create, status, init, schedule)
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
 │   └── [Future] Gemini Adapter
-├── Orchestrator (pipeline, classifier, planner, scorer)
+├── Orchestrator (pipeline, classifier, scorer)
 ├── Reporter (morning summary, run history)
 └── Utils (config, git, logger)
 ```
@@ -177,8 +262,9 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
+- [ ] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
 - [ ] Slack/Discord/Teams notifications on run completion
-- [ ] GitHub Action for scheduled runs
+- [x] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)
 - [ ] Learn from PR review feedback
 - [ ] Parallel issue solving
