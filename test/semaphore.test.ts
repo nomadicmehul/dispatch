@@ -44,11 +44,11 @@ describe("Semaphore", () => {
     assert.deepEqual(order, [1, 2]);
   });
 
-  it("handles release without waiters", () => {
+  it("handles release without prior acquire gracefully", () => {
     const sem = new Semaphore(2);
-    // Release without acquire should not throw (defensive)
+    // Release without acquire should be a no-op (guarded)
     sem.release();
-    assert.equal(sem.activeCount, -1); // Goes negative, but doesn't crash
+    assert.equal(sem.activeCount, 0); // Stays at 0, does not go negative
   });
 
   it("supports high concurrency", async () => {

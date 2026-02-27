@@ -9,19 +9,13 @@ export interface GitResult {
   stderr: string;
 }
 
-async function git(args: string[], cwd?: string): Promise<GitResult> {
+export async function git(args: string[], cwd?: string): Promise<GitResult> {
   log.debug(`git ${args.join(" ")}`);
   const { stdout, stderr } = await exec("git", args, {
     cwd: cwd || process.cwd(),
     maxBuffer: 10 * 1024 * 1024,
   });
   return { stdout: stdout.trim(), stderr: stderr.trim() };
-}
-
-/** Get the current branch name */
-export async function getCurrentBranch(cwd?: string): Promise<string> {
-  const { stdout } = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
-  return stdout;
 }
 
 /** Get the remote origin URL and parse owner/repo */
@@ -44,14 +38,13 @@ export async function getRepoInfo(cwd?: string): Promise<{ owner: string; repo: 
   throw new Error(`Could not parse GitHub repo from remote URL: ${url}`);
 }
 
-/** Create and checkout a new branch */
-export async function createBranch(branchName: string, baseBranch: string, cwd?: string): Promise<void> {
-  await git(["fetch", "origin", baseBranch], cwd);
-  await git(["checkout", "-b", branchName, `origin/${baseBranch}`], cwd);
-}
-
 /** Sensitive file patterns that should never be staged */
-const SENSITIVE_PATTERNS = [".env*", "*.pem", "*.key", "credentials*", "*.secret", ".secrets*"];
+const SENSITIVE_PATTERNS = [
+  ".env*", "*.pem", "*.key", "*.p12", "*.pfx",
+  "credentials*", "*.secret", ".secrets*",
+  "secrets.yaml", "secrets.yml", "secrets.json",
+  "*.token", "*password*",
+];
 
 /** Stage all changes, commit, and push — with sensitive file protection */
 export async function commitAndPush(
@@ -87,36 +80,8 @@ export async function commitAndPush(
   return { hasChanges: true };
 }
 
-/** Get list of changed files vs base branch */
-export async function getChangedFiles(baseBranch: string, cwd?: string): Promise<string[]> {
-  const { stdout } = await git(["diff", "--name-only", `origin/${baseBranch}...HEAD`], cwd);
-  return stdout ? stdout.split("\n").filter(Boolean) : [];
-}
-
-/** Switch back to a branch (cleanup) */
-export async function checkoutBranch(branchName: string, cwd?: string): Promise<void> {
-  await git(["checkout", branchName], cwd);
-}
-
-/** Clean up working directory */
-export async function cleanWorkingDir(cwd?: string): Promise<void> {
-  await git(["checkout", "."], cwd);
-  await git(["clean", "-fd"], cwd);
-}
-
-/** Delete a local branch */
-export async function deleteBranch(branchName: string, cwd?: string): Promise<void> {
-  await git(["branch", "-D", branchName], cwd);
-}
-
 /** Get short diff summary for PR description */
 export async function getDiffSummary(baseBranch: string, cwd?: string): Promise<string> {
   const { stdout } = await git(["diff", "--stat", `origin/${baseBranch}...HEAD`], cwd);
   return stdout;
-}
-
-/** Check if working directory is clean */
-export async function isClean(cwd?: string): Promise<boolean> {
-  const { stdout } = await git(["status", "--porcelain"], cwd);
-  return !stdout;
 }

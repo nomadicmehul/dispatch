@@ -1,19 +1,7 @@
 import { join } from "node:path";
 import { rm, access } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { git } from "./git.js";
 import { log } from "./logger.js";
-
-const exec = promisify(execFile);
-
-async function git(args: string[], cwd?: string): Promise<string> {
-  log.debug(`git ${args.join(" ")}`);
-  const { stdout } = await exec("git", args, {
-    cwd: cwd || process.cwd(),
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return stdout.trim();
-}
 
 /**
  * Create a git worktree with a new branch based on a remote base branch.

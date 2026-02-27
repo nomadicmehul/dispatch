@@ -26,6 +26,9 @@ export class Semaphore {
   }
 
   release(): void {
+    if (this.active <= 0 && this.queue.length === 0) {
+      return; // Guard against releasing without a prior acquire
+    }
     this.active--;
     const next = this.queue.shift();
     if (next) next();

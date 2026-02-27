@@ -73,8 +73,8 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
           unknowns.map(async (issue) => {
             try {
               issue.classification = await engine.classifyIssue(issue);
-            } catch {
-              // leave as "unknown" — pipeline will still process it
+            } catch (err) {
+              log.warn(`[#${issue.number}] AI classification failed, using "unknown": ${err instanceof Error ? err.message : err}`);
             }
           })
         );

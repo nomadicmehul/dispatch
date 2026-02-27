@@ -1,5 +1,6 @@
 import { readFile, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
+import { log } from "./logger.js";
 
 export interface DispatchConfig {
   /** AI engine to use: "claude" (default), future: "gemini", "openai" */
@@ -59,7 +60,11 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<DispatchC
     const raw = await readFile(configPath, "utf-8");
     const fileConfig = JSON.parse(raw) as Partial<DispatchConfig>;
     return { ...DEFAULT_CONFIG, ...fileConfig };
-  } catch {
+  } catch (err) {
+    // Only warn if the file exists but failed to parse (not if it's simply missing)
+    if (err instanceof SyntaxError) {
+      log.warn(`Could not parse ${CONFIG_FILENAME}: ${err.message}. Using defaults.`);
+    }
     return { ...DEFAULT_CONFIG };
   }
 }
@@ -75,13 +80,34 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
 
   if (options.engine) merged.engine = String(options.engine);
   if (options.model) merged.model = String(options.model);
-  if (options.maxIssues) merged.maxIssues = Number(options.maxIssues);
-  if (options.maxTurns) merged.maxTurnsPerIssue = Number(options.maxTurns);
+  if (options.maxIssues) {
+    const val = Number(options.maxIssues);
+    if (!Number.isFinite(val) || val < 1) {
+      log.warn(`Invalid --max-issues "${options.maxIssues}", using default (${config.maxIssues}).`);
+    } else {
+      merged.maxIssues = Math.floor(val);
+    }
+  }
+  if (options.maxTurns) {
+    const val = Number(options.maxTurns);
+    if (!Number.isFinite(val) || val < 1) {
+      log.warn(`Invalid --max-turns "${options.maxTurns}", using default (${config.maxTurnsPerIssue}).`);
+    } else {
+      merged.maxTurnsPerIssue = Math.floor(val);
+    }
+  }
   if (options.label) merged.labels = Array.isArray(options.label) ? options.label : [String(options.label)];
   if (options.exclude) merged.exclude = Array.isArray(options.exclude) ? options.exclude : [String(options.exclude)];
   if (options.draft !== undefined) merged.createDraftPRs = Boolean(options.draft);
   if (options.baseBranch) merged.baseBranch = String(options.baseBranch);
-  if (options.concurrency) merged.concurrency = Number(options.concurrency);
+  if (options.concurrency) {
+    const val = Number(options.concurrency);
+    if (!Number.isFinite(val) || val < 1) {
+      log.warn(`Invalid --concurrency "${options.concurrency}", using default (${config.concurrency}).`);
+    } else {
+      merged.concurrency = Math.floor(val);
+    }
+  }
 
   return merged;
 }

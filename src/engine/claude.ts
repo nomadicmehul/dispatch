@@ -203,11 +203,16 @@ ${CONFIDENCE_PROMPT}`;
         commitMessage: string;
       }>(result);
 
+      const rawConfidence = Number(assessment.confidence);
+      const confidence = Number.isFinite(rawConfidence)
+        ? Math.min(10, Math.max(1, rawConfidence))
+        : 5; // Default to medium if AI returns non-numeric confidence
+
       return {
-        success: assessment.confidence >= 3,
+        success: confidence >= 3,
         changedFiles: assessment.changedFiles || [],
         summary: assessment.summary || "Changes made to resolve the issue.",
-        confidence: Math.min(10, Math.max(1, assessment.confidence)),
+        confidence,
         uncertainties: assessment.uncertainties || [],
         commitMessage: assessment.commitMessage || `fix: resolve issue #${issue.number}`,
       };
@@ -231,7 +236,7 @@ ${CONFIDENCE_PROMPT}`;
   }
 
   async createIssue(description: string, context: RepoContext): Promise<StructuredIssue> {
-    const prompt = ISSUE_CREATION_PROMPT.replace("{description}", description);
+    const prompt = ISSUE_CREATION_PROMPT.replace("{description}", () => description);
 
     const result = await this.runClaude(prompt, {
       cwd: context.cwd,

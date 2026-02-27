@@ -154,7 +154,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
   "autoLabel": true,
   "baseBranch": "main",
   "draftThreshold": 5,
-  "stateDir": ".dispatch"
+  "stateDir": ".dispatch",
+  "timeoutPerIssue": 600000,
+  "concurrency": 3
 }
 ```
 
@@ -171,6 +173,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `autoLabel` | Auto-label issues with classification | `true` |
 | `baseBranch` | Base branch for PRs | `main` |
 | `draftThreshold` | Confidence below this → draft PR | `5` |
+| `stateDir` | Directory for dispatch state/logs | `.dispatch` |
+| `timeoutPerIssue` | Timeout per issue in milliseconds | `600000` (10 min) |
+| `concurrency` | Number of issues to process in parallel | `3` |
 
 ## Issue Types
 
@@ -189,9 +194,8 @@ Dispatch automatically classifies issues and adapts its approach:
 
 After solving each issue, the AI self-assesses its confidence (1-10):
 
-- **8-10**: Regular PR — high confidence, ship it
-- **5-7**: Regular PR with "needs-review" notes
-- **1-4**: Draft PR — significant uncertainty, manual review essential
+- **5-10**: Regular PR — review recommended
+- **1-4**: Draft PR with "needs-review" label — significant uncertainty, manual review essential
 
 ## Authentication Methods
 
@@ -247,7 +251,7 @@ dispatch CLI
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
 │   └── [Future] Gemini Adapter
-├── Orchestrator (pipeline, classifier, planner, scorer)
+├── Orchestrator (pipeline, classifier, scorer)
 ├── Reporter (morning summary, run history)
 └── Utils (config, git, logger)
 ```

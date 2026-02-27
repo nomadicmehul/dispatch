@@ -172,7 +172,7 @@ export function generateWorkflow(cronSchedule: string, maxIssues: number, draft:
   return API_KEY_WORKFLOW(cronSchedule, maxIssues, draft, labels);
 }
 
-export function parseCronTime(time: string): string {
+export function parseCronTime(time: string): string | null {
   // Accept formats like "2am", "2:00", "02:00", "14:00", "2 AM", "midnight"
   const normalized = time.toLowerCase().trim();
 
@@ -201,8 +201,8 @@ export function parseCronTime(time: string): string {
     }
   }
 
-  // Default: 2 AM UTC
-  return "0 2 * * *";
+  // Unrecognized format
+  return null;
 }
 
 /** Print auth-method-specific setup instructions */
@@ -273,13 +273,16 @@ export function registerScheduleCommand(program: Command) {
           log.error("Not in a Git repository with a GitHub remote.");
           log.info("Run this command from the root of your GitHub repository.");
           process.exit(1);
-          return;
         }
 
         log.header("Dispatch Schedule Setup");
         log.info(`Repository: ${chalk.bold(`${owner}/${repo}`)}`);
 
-        const cronSchedule = options.cron || parseCronTime(options.time);
+        let cronSchedule = options.cron || parseCronTime(options.time);
+        if (!cronSchedule) {
+          log.warn(`Unrecognized time format "${options.time}", defaulting to 2 AM UTC.`);
+          cronSchedule = "0 2 * * *";
+        }
         const maxIssues = options.maxIssues || 10;
         const draft = options.draft || false;
         const labels = options.label || [];
@@ -288,7 +291,6 @@ export function registerScheduleCommand(program: Command) {
         if (!["api-key", "claude-code"].includes(auth)) {
           log.error(`Unknown auth method: "${auth}". Use "api-key" (personal) or "claude-code" (enterprise).`);
           process.exit(1);
-          return;
         }
 
         const workflow = generateWorkflow(cronSchedule, maxIssues, draft, labels, auth);

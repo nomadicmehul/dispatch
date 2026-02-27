@@ -39,8 +39,12 @@ describe("parseCronTime", () => {
     assert.equal(parseCronTime("0:00"), "0 0 * * *");
   });
 
-  it("falls back to 2 AM for invalid input", () => {
-    assert.equal(parseCronTime("not-a-time"), "0 2 * * *");
+  it("returns null for invalid input", () => {
+    assert.equal(parseCronTime("not-a-time"), null);
+  });
+
+  it("returns null for out-of-range time", () => {
+    assert.equal(parseCronTime("25:99"), null);
   });
 });
 

@@ -64,7 +64,7 @@ export function registerInitCommand(program: Command) {
               type: "number",
               name: "maxTurnsPerIssue",
               message: "Max AI turns per issue:",
-              default: 25,
+              default: DEFAULT_CONFIG.maxTurnsPerIssue,
             },
             {
               type: "input",

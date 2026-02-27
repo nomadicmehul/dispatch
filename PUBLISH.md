@@ -114,7 +114,7 @@ gh release create v0.1.0 dispatch-ai-0.1.0.tgz \
 
 ```bash
 # Download and install from release
-npm install -g https://github.com/mehulpatel/dispatch/releases/download/v0.1.0/dispatch-ai-0.1.0.tgz
+npm install -g https://github.com/nomadicmehul/dispatch/releases/download/v0.1.0/dispatch-ai-0.1.0.tgz
 ```
 
 ---
@@ -130,7 +130,7 @@ npm install -g https://github.com/mehulpatel/dispatch/releases/download/v0.1.0/d
 ```ruby
 class Dispatch < Formula
   desc "AI-powered batch GitHub issue solver — dispatch issues, receive PRs"
-  homepage "https://github.com/mehulpatel/dispatch"
+  homepage "https://github.com/nomadicmehul/dispatch"
   url "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz"
   sha256 "REPLACE_WITH_ACTUAL_SHA256"
   license "Apache-2.0 WITH Commons-Clause"
@@ -157,7 +157,7 @@ shasum -a 256 dispatch-ai-0.1.0.tgz
 ### Users install with:
 
 ```bash
-brew tap mehulpatel/tap
+brew tap nomadicmehul/tap
 brew install dispatch
 ```
 
@@ -182,7 +182,7 @@ Submit PR to [homebrew-core](https://github.com/Homebrew/homebrew-core) once the
 {
   "version": "0.1.0",
   "description": "AI-powered batch GitHub issue solver",
-  "homepage": "https://github.com/mehulpatel/dispatch",
+  "homepage": "https://github.com/nomadicmehul/dispatch",
   "license": "Apache-2.0 WITH Commons-Clause",
   "depends": "nodejs",
   "url": "https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-0.1.0.tgz",
@@ -197,7 +197,7 @@ Submit PR to [homebrew-core](https://github.com/Homebrew/homebrew-core) once the
 ### Users install with:
 
 ```powershell
-scoop bucket add dispatch https://github.com/mehulpatel/scoop-dispatch
+scoop bucket add dispatch https://github.com/nomadicmehul/scoop-dispatch
 scoop install dispatch
 ```
 
@@ -214,7 +214,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="AI-powered batch GitHub issue solver"
 arch=('any')
-url="https://github.com/mehulpatel/dispatch"
+url="https://github.com/nomadicmehul/dispatch"
 license=('Apache-2.0 WITH Commons-Clause')
 depends=('nodejs>=20')
 source=("https://registry.npmjs.org/dispatch-ai/-/dispatch-ai-${pkgver}.tgz")
@@ -342,7 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mehulpatel/dispatch@v1
+      - uses: nomadicmehul/dispatch@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           max-issues: 10
