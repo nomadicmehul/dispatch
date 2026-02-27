@@ -5,6 +5,8 @@ import { loadConfig } from "../utils/config.js";
 import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
+import { GitHubModelsEngine } from "../engine/github-models.js";
+import type { AIEngine } from "../engine/types.js";
 import { log } from "../utils/logger.js";
 
 export function registerCreateCommand(program: Command) {
@@ -38,10 +40,19 @@ export function registerCreateCommand(program: Command) {
         log.info("Generating structured issue with AI...\n");
 
         // Use AI to structure the issue
-        const engine = new ClaudeEngine({
-          model: options.model || config.model,
-          maxTurns: 3,
-        });
+        const engineName = options.engine || config.engine;
+        let engine: AIEngine;
+        if (engineName === "github-models") {
+          engine = new GitHubModelsEngine({
+            model: options.model || config.model,
+            maxTurns: 3,
+          });
+        } else {
+          engine = new ClaudeEngine({
+            model: options.model || config.model,
+            maxTurns: 3,
+          });
+        }
 
         const structured = await engine.createIssue(finalDescription, {
           owner,

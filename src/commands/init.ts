@@ -36,6 +36,7 @@ export function registerInitCommand(program: Command) {
               message: "AI engine:",
               choices: [
                 { name: "Claude Code (recommended)", value: "claude" },
+                { name: "GitHub Models (GPT-4o, Claude, Gemini via GITHUB_TOKEN)", value: "github-models" },
                 { name: "Gemini CLI (coming soon)", value: "gemini", disabled: true },
               ],
               default: "claude",
@@ -44,8 +45,19 @@ export function registerInitCommand(program: Command) {
               type: "list",
               name: "model",
               message: "Model to use:",
-              choices: ["sonnet", "opus", "haiku"],
-              default: "sonnet",
+              choices: (answers: { engine: string }) => {
+                if (answers.engine === "github-models") {
+                  return [
+                    { name: "openai/gpt-4o (recommended)", value: "openai/gpt-4o" },
+                    { name: "anthropic/claude-sonnet-4", value: "anthropic/claude-sonnet-4" },
+                    { name: "google/gemini-2.5-pro", value: "google/gemini-2.5-pro" },
+                    { name: "meta/llama-4-scout", value: "meta/llama-4-scout" },
+                  ];
+                }
+                return ["sonnet", "opus", "haiku"];
+              },
+              default: (answers: { engine: string }) =>
+                answers.engine === "github-models" ? "openai/gpt-4o" : "sonnet",
             },
             {
               type: "input",
@@ -92,7 +104,11 @@ export function registerInitCommand(program: Command) {
         console.log();
         log.info(`Next steps:`);
         console.log(chalk.gray(`  1. Set your GitHub token:  ${chalk.yellow("export GITHUB_TOKEN=ghp_...")}  (or ${chalk.yellow("gh auth login")})`));
-        console.log(chalk.gray(`  2. Ensure Claude Code is installed:  ${chalk.yellow("claude --version")}`));
+        if (config.engine === "github-models") {
+          console.log(chalk.gray(`  2. Ensure GITHUB_TOKEN has models:read scope`));
+        } else {
+          console.log(chalk.gray(`  2. Ensure Claude Code is installed:  ${chalk.yellow("claude --version")}`));
+        }
         console.log(chalk.gray(`  3. Run dispatch:  ${chalk.yellow("dispatch run")}`));
         console.log();
         console.log(chalk.dim(`  Want nightly CI runs? Use ${chalk.yellow("dispatch schedule")} to set up GitHub Actions.`));

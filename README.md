@@ -101,22 +101,24 @@ dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UT
 dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
 dispatch schedule --label bug             # only process issues labeled "bug"
 dispatch schedule --auth claude-code      # enterprise: uses Anthropic's GitHub Action (no API key)
+dispatch schedule --auth github-models    # zero setup: uses GITHUB_TOKEN for AI (no extra secrets)
+dispatch schedule --auth github-models --model anthropic/claude-sonnet-4  # GitHub Models with specific model
 dispatch schedule --stdout                # print workflow YAML without writing file
 ```
 
 **What happens:**
 1. Generates a `.github/workflows/dispatch-nightly.yml` file
-2. The workflow installs Claude Code and Dispatch on a GitHub Actions runner
+2. The workflow installs Dispatch (and Claude Code CLI if using `api-key` auth) on a GitHub Actions runner
 3. Runs `dispatch run` on your configured schedule
 4. Supports manual triggering from the GitHub Actions UI (`workflow_dispatch`)
 5. Uploads `.dispatch/` logs as artifacts (retained 30 days)
 
 **Required setup after running:**
-1. Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) (`GITHUB_TOKEN` is auto-provided)
-2. Commit and push the workflow file
-3. Optionally trigger a manual run from the **Actions** tab
+- **`api-key`** (default): Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
+- **`claude-code`** (enterprise): Just commit and push — OIDC auth is automatic
+- **`github-models`** (zero setup): Just commit and push — `GITHUB_TOKEN` is auto-provided by GitHub Actions
 
-> **Enterprise users**: Can't create an Anthropic API key? Use `--auth claude-code` to generate a workflow that uses Anthropic's [official GitHub Action](https://github.com/anthropics/claude-code-action) with OIDC auth — no API key needed. See [Authentication Methods](#authentication-methods) below.
+> **Easiest option**: `dispatch schedule --auth github-models` requires zero secrets — just commit the workflow file and it works. Uses GPT-4o by default, or pass `--model` to choose another model.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -125,7 +127,8 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--max-issues <n>` | Max issues per run | `10` |
 | `--draft` | Create PRs as drafts | `false` |
 | `--label <labels...>` | Only process issues with these labels | — |
-| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise) | `api-key` |
+| `--model <model>` | Model for `github-models` auth (`openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc.) | `openai/gpt-4o` |
+| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise), `github-models` (zero setup) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch init`
@@ -162,8 +165,8 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `engine` | AI backend (`claude`, future: `gemini`) | `claude` |
-| `model` | Model name (`sonnet`, `opus`, `haiku`) | `sonnet` |
+| `engine` | AI backend (`claude`, `github-models`, future: `gemini`) | `claude` |
+| `model` | Model name (`sonnet`, `opus`, `haiku` for Claude; `openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc. for GitHub Models) | `sonnet` |
 | `labels` | Only process issues with these labels (empty = all) | `[]` |
 | `exclude` | Skip issues with these labels | `["wontfix", "blocked", "duplicate"]` |
 | `maxIssues` | Max issues per run | `10` |
@@ -236,10 +239,49 @@ dispatch schedule --auth claude-code  # generates workflow using Anthropic's off
 
 **Why this exists:** Enterprise Claude Code users authenticate locally via interactive OAuth (browser login). That works great for development, but CI environments can't open a browser. The `claude-code-action` solves this by using GitHub's OIDC token provider to authenticate with Anthropic — same org plan, no separate API key required.
 
+## Engines
+
+### Claude Code (default)
+
+Uses [Claude Code](https://claude.com/claude-code) CLI as the AI backend. Requires a separate Anthropic API key or Max subscription.
+
+```json
+{
+  "engine": "claude",
+  "model": "sonnet"
+}
+```
+
+### GitHub Models
+
+Uses the [GitHub Models](https://github.com/marketplace/models) inference API — access GPT-4o, Claude Sonnet, Gemini, Llama, and more through your existing `GITHUB_TOKEN`. No additional API keys needed.
+
+```json
+{
+  "engine": "github-models",
+  "model": "openai/gpt-4o"
+}
+```
+
+**Available models include:**
+- `openai/gpt-4o` — GPT-4o (recommended for best tool-calling support)
+- `anthropic/claude-sonnet-4` — Claude Sonnet 4
+- `google/gemini-2.5-pro` — Gemini 2.5 Pro
+- `meta/llama-4-scout` — Llama 4 Scout
+
+**Setup:**
+1. Your `GITHUB_TOKEN` needs `models:read` scope (for fine-grained PATs) or classic tokens work by default
+2. Set `engine` to `"github-models"` in `.dispatchrc.json` (or `dispatch init`)
+3. That's it — `dispatch run` will use the GitHub Models API
+
+**Free tier:** GitHub Models includes a free tier (rate-limited). See [GitHub Models pricing](https://docs.github.com/en/github-models) for details.
+
+**How it works:** Unlike Claude Code (which delegates to the `claude` CLI), the GitHub Models engine runs its own agentic loop: it calls the model API, executes tool calls (file read/write, grep, bash) locally in the worktree, and repeats until the issue is solved.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
-- [Claude Code](https://claude.com/claude-code) installed and authenticated
+- [Claude Code](https://claude.com/claude-code) installed and authenticated (for `claude` engine)
 - [GitHub token](https://github.com/settings/tokens) with repo access (or `gh auth login`)
 
 ## Architecture
@@ -250,6 +292,7 @@ dispatch CLI
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
+│   └── GitHub Models Adapter (openai SDK + local tool execution)
 │   └── [Future] Gemini Adapter
 ├── Orchestrator (pipeline, classifier, scorer)
 ├── Reporter (morning summary, run history)
@@ -262,7 +305,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
-- [ ] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
+- [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
 - [ ] Slack/Discord/Teams notifications on run completion
 - [x] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)

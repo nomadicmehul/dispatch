@@ -134,3 +134,57 @@ describe("generateWorkflow (claude-code)", () => {
     assert.ok(labelYaml.includes("--label bug"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// generateWorkflow — github-models (zero setup)
+// ---------------------------------------------------------------------------
+describe("generateWorkflow (github-models)", () => {
+  const yaml = generateWorkflow("0 2 * * *", 10, false, [], "github-models");
+
+  it("contains the cron schedule", () => {
+    assert.ok(yaml.includes('cron: "0 2 * * *"'));
+  });
+
+  it("does NOT include ANTHROPIC_API_KEY", () => {
+    assert.ok(!yaml.includes("ANTHROPIC_API_KEY"));
+  });
+
+  it("does NOT install claude code CLI", () => {
+    assert.ok(!yaml.includes("@anthropic-ai/claude-code"));
+  });
+
+  it("does NOT reference claude-code-action", () => {
+    assert.ok(!yaml.includes("anthropic/claude-code-action"));
+  });
+
+  it("does NOT include id-token permission", () => {
+    assert.ok(!yaml.includes("id-token"));
+  });
+
+  it("includes --engine github-models flag", () => {
+    assert.ok(yaml.includes("--engine github-models"));
+  });
+
+  it("includes --model flag with default model", () => {
+    assert.ok(yaml.includes("--model openai/gpt-4o"));
+  });
+
+  it("uses custom model when provided", () => {
+    const customYaml = generateWorkflow("0 2 * * *", 10, false, [], "github-models", "anthropic/claude-sonnet-4");
+    assert.ok(customYaml.includes("--model anthropic/claude-sonnet-4"));
+  });
+
+  it("installs dispatch-ai@beta", () => {
+    assert.ok(yaml.includes("dispatch-ai@beta"));
+  });
+
+  it("includes --draft flag when draft is true", () => {
+    const draftYaml = generateWorkflow("0 2 * * *", 5, true, [], "github-models");
+    assert.ok(draftYaml.includes("--draft"));
+  });
+
+  it("includes --label flag when labels are provided", () => {
+    const labelYaml = generateWorkflow("0 2 * * *", 10, false, ["bug", "p0"], "github-models");
+    assert.ok(labelYaml.includes("--label bug p0"));
+  });
+});
