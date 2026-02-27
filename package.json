@@ -1,6 +1,6 @@
 {
   "name": "dispatch-ai",
-  "version": "0.1.0-beta",
+  "version": "0.1.1-beta",
   "description": "Dispatch your GitHub issues. Receive pull requests. AI-powered batch issue solver.",
   "author": "Mehul Patel <nomadicmehul@gmail.com>",
   "license": "Apache-2.0 WITH Commons-Clause",
@@ -52,6 +52,8 @@
     "pull-requests",
     "ai",
     "claude",
+    "gemini",
+    "github-models",
     "automation",
     "dispatch",
     "cli"

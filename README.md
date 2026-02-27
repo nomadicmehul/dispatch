@@ -103,6 +103,8 @@ dispatch schedule --label bug             # only process issues labeled "bug"
 dispatch schedule --auth claude-code      # enterprise: uses Anthropic's GitHub Action (no API key)
 dispatch schedule --auth github-models    # zero setup: uses GITHUB_TOKEN for AI (no extra secrets)
 dispatch schedule --auth github-models --model anthropic/claude-sonnet-4  # GitHub Models with specific model
+dispatch schedule --auth gemini           # uses GEMINI_API_KEY secret (default: gemini-2.5-pro)
+dispatch schedule --auth gemini --model gemini-3-pro-preview  # Gemini 3 series model
 dispatch schedule --stdout                # print workflow YAML without writing file
 ```
 
@@ -117,6 +119,7 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 - **`api-key`** (default): Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 - **`claude-code`** (enterprise): Just commit and push — OIDC auth is automatic
 - **`github-models`** (zero setup): Just commit and push — `GITHUB_TOKEN` is auto-provided by GitHub Actions
+- **`gemini`**: Add `GEMINI_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 
 > **Easiest option**: `dispatch schedule --auth github-models` requires zero secrets — just commit the workflow file and it works. Uses GPT-4o by default, or pass `--model` to choose another model.
 
@@ -127,8 +130,8 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--max-issues <n>` | Max issues per run | `10` |
 | `--draft` | Create PRs as drafts | `false` |
 | `--label <labels...>` | Only process issues with these labels | — |
-| `--model <model>` | Model for `github-models` auth (`openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc.) | `openai/gpt-4o` |
-| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise), `github-models` (zero setup) | `api-key` |
+| `--model <model>` | Model for `github-models` or `gemini` auth | `openai/gpt-4o` / `gemini-2.5-pro` |
+| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise), `github-models` (zero setup), `gemini` (Google AI) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch init`
