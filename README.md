@@ -48,6 +48,7 @@ dispatch run --max-issues 5           # limit to 5 issues
 dispatch run --draft                  # create all PRs as drafts
 dispatch run --model opus             # use a specific model
 dispatch run --base-branch develop    # target a different base branch
+dispatch run --no-telemetry           # disable telemetry for this run
 ```
 
 **What happens:**
@@ -86,6 +87,25 @@ dispatch status          # pretty-printed morning report
 dispatch status --json   # raw JSON output
 ```
 
+### `dispatch stats`
+
+View cumulative statistics across all runs.
+
+```bash
+dispatch stats              # formatted dashboard
+dispatch stats --json       # raw JSON output
+dispatch stats --recent 5   # show last 5 runs
+```
+
+**Displays:**
+- Lifetime totals (issues checked, processed, solved, failed, PRs created)
+- Success rate and average solve time
+- Classification breakdown (bar chart)
+- Confidence distribution (1-10 histogram)
+- Engine usage breakdown
+- Failure categories
+- Recent runs table
+
 ### `dispatch init`
 
 Initialize configuration for your repository.
@@ -112,7 +132,10 @@ Dispatch reads `.dispatchrc.json` from your repo root:
   "autoLabel": true,
   "baseBranch": "main",
   "draftThreshold": 5,
-  "stateDir": ".dispatch"
+  "stateDir": ".dispatch",
+  "telemetry": true,
+  "posthogHost": "https://app.posthog.com",
+  "posthogApiKey": ""
 }
 ```
 
@@ -129,6 +152,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `autoLabel` | Auto-label issues with classification | `true` |
 | `baseBranch` | Base branch for PRs | `main` |
 | `draftThreshold` | Confidence below this → draft PR | `5` |
+| `telemetry` | Enable anonymous usage analytics | `true` |
+| `posthogHost` | PostHog host URL (for self-hosted instances) | `https://app.posthog.com` |
+| `posthogApiKey` | PostHog project API key (write-only) | `""` |
 
 ## Issue Types
 
@@ -151,6 +177,31 @@ After solving each issue, the AI self-assesses its confidence (1-10):
 - **5-7**: Regular PR with "needs-review" notes
 - **1-4**: Draft PR — significant uncertainty, manual review essential
 
+## Telemetry & Privacy
+
+Dispatch collects anonymous usage analytics to help improve the tool. Telemetry is **enabled by default** and can be disabled at any time.
+
+**What's collected (anonymized):**
+- Aggregate counts: issues checked, processed, solved, failed, PRs created
+- Classification distribution and confidence scores
+- Solve times and generic failure categories (e.g. "timeout", "rate-limit")
+- Config settings: engine, model, concurrency, thresholds
+- Repo `owner/repo` (public GitHub info)
+
+**Never collected:**
+- Issue titles, body, comments, or code content
+- File paths, diffs, or error stack traces
+- GitHub usernames, emails, or tokens
+
+**Local stats** (`.dispatch/stats.json`) are always saved regardless of telemetry settings — they're private to your machine and power `dispatch stats`.
+
+**Opt-out methods:**
+- Config: `"telemetry": false` in `.dispatchrc.json`
+- CLI flag: `dispatch run --no-telemetry`
+- Environment variable: `DISPATCH_NO_TELEMETRY=1`
+
+**Self-hosted analytics:** Set `posthogHost` and `posthogApiKey` in your config to point to your own PostHog instance. Remote telemetry is skipped entirely if no API key is configured.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
@@ -161,12 +212,13 @@ After solving each issue, the AI self-assesses its confidence (1-10):
 
 ```
 dispatch CLI
-├── Commands (run, create, status, init)
+├── Commands (run, create, status, stats, init)
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
 │   └── [Future] Gemini Adapter
 ├── Orchestrator (pipeline, classifier, planner, scorer)
+├── Telemetry (collector, local store, remote transport)
 ├── Reporter (morning summary, run history)
 └── Utils (config, git, logger)
 ```

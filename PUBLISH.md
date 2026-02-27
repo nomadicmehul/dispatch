@@ -397,3 +397,48 @@ This is the approach used by `gh` CLI, `lazygit`, `act`, and `age`.
 - [ ] Test `npm pack` and install from tarball locally
 - [ ] Tag release: `git tag v0.1.0 && git push --tags`
 - [ ] Set up npm 2FA for publish security
+- [ ] Set up PostHog telemetry (see below)
+
+---
+
+## Telemetry Setup Before Publishing
+
+> **Note:** Remove this section once PostHog is configured and the first publish is done.
+
+Remote telemetry requires a PostHog write-only project API key hardcoded in the default config. Without it, remote telemetry is silently skipped (local stats still work).
+
+### Steps:
+
+1. **Set up PostHog** (self-hosted or cloud free tier)
+2. **Get your project API key:**
+   - Go to **Project Settings > Project API Key**
+   - Copy the key (starts with `phc_`)
+3. **Add the key to `src/utils/config.ts`:**
+
+```typescript
+// In DEFAULT_CONFIG, replace the empty string:
+posthogApiKey: "phc_yourWriteOnlyKeyHere",
+```
+
+4. **If self-hosted, also update the host:**
+
+```typescript
+posthogHost: "https://your-posthog-instance.example.com",
+```
+
+5. **Build and publish:**
+
+```bash
+npm run build
+npm publish --tag beta
+```
+
+### What this enables:
+
+When anyone runs `dispatch run`, anonymous usage metrics (issue counts, PR counts, solve times, classification breakdown) are sent to your PostHog instance. No issue content, code, usernames, or tokens are ever transmitted.
+
+### Key facts:
+
+- The `phc_` key is **write-only** — safe to commit (same as Google Analytics IDs)
+- Users can opt out via config (`"telemetry": false`), CLI flag (`--no-telemetry`), or env var (`DISPATCH_NO_TELEMETRY=1`)
+- Local stats (`.dispatch/stats.json`) are always saved regardless
