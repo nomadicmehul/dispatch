@@ -65,10 +65,10 @@ npm publish --access public
 
 ```bash
 # Run without installing
-npx dispatch-ai run
+npx dispatch-ai@beta run
 
 # Or install globally
-npm install -g dispatch-ai
+npm install -g dispatch-ai@beta
 dispatch run
 ```
 

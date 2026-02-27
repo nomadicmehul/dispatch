@@ -100,6 +100,7 @@ dispatch schedule --time 3am              # run at 3 AM UTC
 dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UTC
 dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
 dispatch schedule --label bug             # only process issues labeled "bug"
+dispatch schedule --auth claude-code      # enterprise: uses Anthropic's GitHub Action (no API key)
 dispatch schedule --stdout                # print workflow YAML without writing file
 ```
 
@@ -115,6 +116,8 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 2. Commit and push the workflow file
 3. Optionally trigger a manual run from the **Actions** tab
 
+> **Enterprise users**: Can't create an Anthropic API key? Use `--auth claude-code` to generate a workflow that uses Anthropic's [official GitHub Action](https://github.com/anthropics/claude-code-action) with OIDC auth — no API key needed. See [Authentication Methods](#authentication-methods) below.
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--time <time>` | Time to run in UTC (`2am`, `03:00`, `midnight`, `noon`) | `2am` |
@@ -122,6 +125,7 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--max-issues <n>` | Max issues per run | `10` |
 | `--draft` | Create PRs as drafts | `false` |
 | `--label <labels...>` | Only process issues with these labels | — |
+| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch init`
@@ -189,6 +193,45 @@ After solving each issue, the AI self-assesses its confidence (1-10):
 - **5-7**: Regular PR with "needs-review" notes
 - **1-4**: Draft PR — significant uncertainty, manual review essential
 
+## Authentication Methods
+
+Dispatch supports two ways to authenticate Claude in GitHub Actions:
+
+| | Personal Account | Enterprise/Team Account |
+|---|---|---|
+| **Flag** | `--auth api-key` (default) | `--auth claude-code` |
+| **How** | You create an API key at console.anthropic.com | Anthropic's GitHub Action uses OIDC |
+| **Secrets** | `ANTHROPIC_API_KEY` | None (automatic) |
+| **Setup** | ~2 minutes | Ask your Anthropic admin to enable OIDC |
+
+### `api-key` — Personal accounts (default)
+
+Create an API key from your Anthropic account and add it as a GitHub secret.
+
+```bash
+dispatch schedule                    # generates workflow with ANTHROPIC_API_KEY secret
+```
+
+**Setup:**
+1. Create an API key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+2. Add it as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) named `ANTHROPIC_API_KEY`
+3. Commit and push the workflow file
+
+### `claude-code` — Enterprise/team accounts
+
+Uses Anthropic's official [`claude-code-action`](https://github.com/anthropics/claude-code-action) GitHub Action. Authenticates via **OIDC** (OpenID Connect) — your org's Anthropic plan is used directly. No API key needed.
+
+```bash
+dispatch schedule --auth claude-code  # generates workflow using Anthropic's official action
+```
+
+**Setup:**
+1. Your Anthropic admin enables OIDC trust between GitHub and your org's Anthropic account
+2. Commit and push the workflow file
+3. That's it — the action handles auth automatically
+
+**Why this exists:** Enterprise Claude Code users authenticate locally via interactive OAuth (browser login). That works great for development, but CI environments can't open a browser. The `claude-code-action` solves this by using GitHub's OIDC token provider to authenticate with Anthropic — same org plan, no separate API key required.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
@@ -215,6 +258,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [ ] Gemini CLI adapter
 - [ ] OpenAI adapter
+- [ ] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
 - [ ] Slack/Discord/Teams notifications on run completion
 - [x] GitHub Action for scheduled runs
 - [ ] Issue decomposition (break large issues into sub-tasks)

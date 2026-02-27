@@ -91,9 +91,12 @@ export function registerInitCommand(program: Command) {
         log.success(`Config saved to ${chalk.bold(path)}`);
         console.log();
         log.info(`Next steps:`);
-        console.log(chalk.gray(`  1. Set your GitHub token:  ${chalk.yellow("export GITHUB_TOKEN=ghp_...")}`));
+        console.log(chalk.gray(`  1. Set your GitHub token:  ${chalk.yellow("export GITHUB_TOKEN=ghp_...")}  (or ${chalk.yellow("gh auth login")})`));
         console.log(chalk.gray(`  2. Ensure Claude Code is installed:  ${chalk.yellow("claude --version")}`));
         console.log(chalk.gray(`  3. Run dispatch:  ${chalk.yellow("dispatch run")}`));
+        console.log();
+        console.log(chalk.dim(`  Want nightly CI runs? Use ${chalk.yellow("dispatch schedule")} to set up GitHub Actions.`));
+        console.log(chalk.dim(`  Enterprise account (no API key)?  ${chalk.yellow("dispatch schedule --auth claude-code")}`));
         console.log();
       } catch (err) {
         log.error(`Init failed: ${err instanceof Error ? err.message : err}`);
