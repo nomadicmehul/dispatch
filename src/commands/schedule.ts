@@ -165,14 +165,14 @@ jobs:
 `;
 };
 
-function generateWorkflow(cronSchedule: string, maxIssues: number, draft: boolean, labels: string[], auth: AuthMethod): string {
+export function generateWorkflow(cronSchedule: string, maxIssues: number, draft: boolean, labels: string[], auth: AuthMethod): string {
   if (auth === "claude-code") {
     return CLAUDE_CODE_WORKFLOW(cronSchedule, maxIssues, draft, labels);
   }
   return API_KEY_WORKFLOW(cronSchedule, maxIssues, draft, labels);
 }
 
-function parseCronTime(time: string): string {
+export function parseCronTime(time: string): string {
   // Accept formats like "2am", "2:00", "02:00", "14:00", "2 AM", "midnight"
   const normalized = time.toLowerCase().trim();
 
