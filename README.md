@@ -165,8 +165,8 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `engine` | AI backend (`claude`, `github-models`, future: `gemini`) | `claude` |
-| `model` | Model name (`sonnet`, `opus`, `haiku` for Claude; `openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc. for GitHub Models) | `sonnet` |
+| `engine` | AI backend (`claude`, `github-models`, `gemini`) | `claude` |
+| `model` | Model name (`sonnet`/`opus`/`haiku` for Claude; `openai/gpt-4o` etc. for GitHub Models; `gemini-2.5-pro` etc. for Gemini) | `sonnet` |
 | `labels` | Only process issues with these labels (empty = all) | `[]` |
 | `exclude` | Skip issues with these labels | `["wontfix", "blocked", "duplicate"]` |
 | `maxIssues` | Max issues per run | `10` |
@@ -278,10 +278,37 @@ Uses the [GitHub Models](https://github.com/marketplace/models) inference API �
 
 **How it works:** Unlike Claude Code (which delegates to the `claude` CLI), the GitHub Models engine runs its own agentic loop: it calls the model API, executes tool calls (file read/write, grep, bash) locally in the worktree, and repeats until the issue is solved.
 
+### Gemini
+
+Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible endpoint. Requires a `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey).
+
+```json
+{
+  "engine": "gemini",
+  "model": "gemini-2.5-pro"
+}
+```
+
+**Available models include:**
+- `gemini-2.5-pro` — Most capable, best for complex issues (recommended)
+- `gemini-2.5-flash` — Faster and cheaper, good for simpler issues
+- `gemini-3-flash-preview` — Next-gen fast model (preview)
+- `gemini-3-pro-preview` — Next-gen capable model (preview)
+- `gemini-3.1-pro-preview` — Latest preview model
+
+**Setup:**
+1. Get an API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Set it: `export GEMINI_API_KEY=your-key-here` (or `GOOGLE_API_KEY`)
+3. Set `engine` to `"gemini"` in `.dispatchrc.json` (or `dispatch init`)
+4. Run `dispatch run`
+
+**How it works:** Like the GitHub Models engine, the Gemini engine runs its own agentic loop: it calls the Gemini API (via Google's OpenAI-compatible endpoint), executes tool calls locally in the worktree, and repeats until the issue is solved. No additional CLI tools need to be installed.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
 - [Claude Code](https://claude.com/claude-code) installed and authenticated (for `claude` engine)
+- [Gemini API Key](https://aistudio.google.com/apikey) (for `gemini` engine)
 - [GitHub token](https://github.com/settings/tokens) with repo access (or `gh auth login`)
 
 ## Architecture
@@ -293,7 +320,7 @@ dispatch CLI
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
 │   └── GitHub Models Adapter (openai SDK + local tool execution)
-│   └── [Future] Gemini Adapter
+│   └── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
 ├── Orchestrator (pipeline, classifier, scorer)
 ├── Reporter (morning summary, run history)
 └── Utils (config, git, logger)
@@ -303,7 +330,7 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 ## Roadmap
 
-- [ ] Gemini CLI adapter
+- [x] Gemini engine adapter
 - [ ] OpenAI adapter
 - [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
 - [ ] Slack/Discord/Teams notifications on run completion

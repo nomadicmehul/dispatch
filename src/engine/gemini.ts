@@ -19,29 +19,29 @@ import { SOLVE_TOOLS, READ_ONLY_TOOLS } from "./tools/definitions.js";
 import { runAgenticLoop } from "./agentic-loop.js";
 import { log } from "../utils/logger.js";
 
-interface GitHubModelsOptions {
+interface GeminiOptions {
   model: string;
   maxTurns: number;
 }
 
-export class GitHubModelsEngine implements AIEngine {
-  readonly name = "github-models";
+export class GeminiEngine implements AIEngine {
+  readonly name = "gemini";
   private client: OpenAI;
   private model: string;
   private maxTurns: number;
 
-  constructor(options: GitHubModelsOptions) {
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
+  constructor(options: GeminiOptions) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
       throw new Error(
-        "GITHUB_TOKEN is required for the github-models engine. " +
-        "Set it with: export GITHUB_TOKEN=ghp_... (needs models:read scope)"
+        "GEMINI_API_KEY or GOOGLE_API_KEY is required for the gemini engine. " +
+        "Get an API key at: https://aistudio.google.com/apikey"
       );
     }
 
     this.client = new OpenAI({
-      baseURL: "https://models.github.ai/inference",
-      apiKey: token,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      apiKey,
     });
 
     this.model = options.model;
@@ -105,7 +105,7 @@ export class GitHubModelsEngine implements AIEngine {
         commitMessage: assessment.commitMessage || `fix: resolve issue #${issueNumber}`,
       };
     } catch {
-      log.warn("Could not parse assessment from GitHub Models response, using defaults");
+      log.warn("Could not parse assessment from Gemini response, using defaults");
       return {
         success: true,
         changedFiles: trackedFiles,
@@ -122,7 +122,7 @@ export class GitHubModelsEngine implements AIEngine {
     const systemPrompt = SYSTEM_PROMPTS[classification];
     const issuePrompt = buildIssuePrompt(issue);
 
-    log.info(`Solving #${issue.number} as "${classification}" with GitHub Models (${this.model})...`);
+    log.info(`Solving #${issue.number} as "${classification}" with Gemini (${this.model})...`);
 
     const combinedPrompt = `${issuePrompt}
 
@@ -136,7 +136,7 @@ ${CONFIDENCE_PROMPT}`;
     if (context.issueLogFile) {
       await writeFile(
         context.issueLogFile,
-        `--- dispatch: github-models engine started at ${new Date().toISOString()} ---\n` +
+        `--- dispatch: gemini engine started at ${new Date().toISOString()} ---\n` +
         `--- model: ${this.model} | maxTurns: ${this.maxTurns} | timeout: ${Math.round(timeout / 1000)}s ---\n\n`,
       );
     }
@@ -157,10 +157,10 @@ ${CONFIDENCE_PROMPT}`;
       maxTurns: this.maxTurns,
       timeout,
       issueLogFile: context.issueLogFile,
-      logPrefix: "github-models",
+      logPrefix: "gemini",
     });
 
-    log.debug(`[github-models] Completed in ${result.totalTurns} turns`);
+    log.debug(`[gemini] Completed in ${result.totalTurns} turns`);
     return this.parseAssessment(result.finalContent, result.changedFiles, issue.number);
   }
 
@@ -184,7 +184,7 @@ ${CONFIDENCE_PROMPT}`;
       },
       maxTurns: 3,
       timeout: 60_000,
-      logPrefix: "github-models",
+      logPrefix: "gemini",
     });
 
     return this.parseJSON<StructuredIssue>(result.finalContent);

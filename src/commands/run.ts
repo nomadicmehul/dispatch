@@ -5,6 +5,7 @@ import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
 import { GitHubModelsEngine } from "../engine/github-models.js";
+import { GeminiEngine } from "../engine/gemini.js";
 import { runPipeline } from "../orchestrator/pipeline.js";
 import { log } from "../utils/logger.js";
 
@@ -52,8 +53,13 @@ export function registerRunCommand(program: Command) {
             model: config.model,
             maxTurns: config.maxTurnsPerIssue,
           });
+        } else if (config.engine === "gemini") {
+          engine = new GeminiEngine({
+            model: config.model === "sonnet" ? "gemini-2.5-pro" : config.model,
+            maxTurns: config.maxTurnsPerIssue,
+          });
         } else {
-          log.error(`Engine "${config.engine}" is not supported. Use "claude" or "github-models".`);
+          log.error(`Engine "${config.engine}" is not supported. Use "claude", "github-models", or "gemini".`);
           process.exit(1);
         }
 
