@@ -32,6 +32,10 @@ export interface DispatchConfig {
   concurrency: number;
   /** Enable anonymous telemetry (default: true). Set to false to opt out of remote analytics. */
   telemetry: boolean;
+  /** PostHog host URL for self-hosted instances (default: https://app.posthog.com) */
+  posthogHost: string;
+  /** PostHog project API key (write-only). Required for remote telemetry. */
+  posthogApiKey: string;
 }
 
 const DEFAULT_CONFIG: DispatchConfig = {
@@ -50,6 +54,8 @@ const DEFAULT_CONFIG: DispatchConfig = {
   timeoutPerIssue: 10 * 60 * 1000, // 10 minutes
   concurrency: 3,
   telemetry: true,
+  posthogHost: "https://app.posthog.com",
+  posthogApiKey: "",
 };
 
 const CONFIG_FILENAME = ".dispatchrc.json";

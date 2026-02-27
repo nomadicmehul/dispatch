@@ -6,10 +6,6 @@ import { log } from "../utils/logger.js";
 
 const TELEMETRY_ID_FILE = "telemetry-id.json";
 
-// PostHog configuration — write-only key, safe to embed in client code
-const POSTHOG_HOST = "https://app.posthog.com";
-const POSTHOG_API_KEY = "phc_PLACEHOLDER_REPLACE_WITH_REAL_KEY";
-
 /** Get or create a stable anonymous ID for this installation */
 export async function getAnonymousId(cwd: string, stateDir: string): Promise<string> {
   const dir = join(cwd, stateDir);
@@ -33,10 +29,21 @@ export async function getAnonymousId(cwd: string, stateDir: string): Promise<str
   return id;
 }
 
-/** Send telemetry event to PostHog. Fire-and-forget, never throws. */
-export function sendTelemetryEvent(event: RunTelemetryEvent): void {
+/** Send telemetry event to PostHog (self-hosted or cloud). Fire-and-forget, never throws. */
+export function sendTelemetryEvent(
+  event: RunTelemetryEvent,
+  posthogHost: string,
+  posthogApiKey: string,
+): void {
+  if (!posthogApiKey) {
+    log.debug("Telemetry: no PostHog API key configured, skipping remote send");
+    return;
+  }
+
+  const host = posthogHost.replace(/\/+$/, ""); // strip trailing slashes
+
   const payload = {
-    api_key: POSTHOG_API_KEY,
+    api_key: posthogApiKey,
     event: event.eventType,
     distinct_id: event.anonymousId,
     timestamp: event.timestamp,
@@ -66,7 +73,7 @@ export function sendTelemetryEvent(event: RunTelemetryEvent): void {
     },
   };
 
-  fetch(`${POSTHOG_HOST}/capture/`, {
+  fetch(`${host}/capture/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

@@ -334,7 +334,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
     // Remote send only if telemetry is enabled
     if (config.telemetry) {
-      sendTelemetryEvent(event);
+      sendTelemetryEvent(event, config.posthogHost, config.posthogApiKey);
     }
   } catch (err) {
     log.debug(`Telemetry finalization failed (non-fatal): ${err}`);
