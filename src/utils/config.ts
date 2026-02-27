@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { log } from "./logger.js";
 
 export interface DispatchConfig {
-  /** AI engine to use: "claude" (default), future: "gemini", "openai" */
+  /** AI engine to use: "claude" (default), "github-models", future: "gemini" */
   engine: string;
   /** Model to use with the engine */
   model: string;
