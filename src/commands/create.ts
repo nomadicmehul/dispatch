@@ -6,6 +6,7 @@ import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
 import { GitHubModelsEngine } from "../engine/github-models.js";
+import { GeminiEngine } from "../engine/gemini.js";
 import type { AIEngine } from "../engine/types.js";
 import { log } from "../utils/logger.js";
 
@@ -41,15 +42,21 @@ export function registerCreateCommand(program: Command) {
 
         // Use AI to structure the issue
         const engineName = options.engine || config.engine;
+        const modelName = options.model || config.model;
         let engine: AIEngine;
-        if (engineName === "github-models") {
+        if (engineName === "gemini") {
+          engine = new GeminiEngine({
+            model: modelName === "sonnet" ? "gemini-2.5-pro" : modelName,
+            maxTurns: 3,
+          });
+        } else if (engineName === "github-models") {
           engine = new GitHubModelsEngine({
-            model: options.model || config.model,
+            model: modelName,
             maxTurns: 3,
           });
         } else {
           engine = new ClaudeEngine({
-            model: options.model || config.model,
+            model: modelName,
             maxTurns: 3,
           });
         }

@@ -37,7 +37,7 @@ export function registerInitCommand(program: Command) {
               choices: [
                 { name: "Claude Code (recommended)", value: "claude" },
                 { name: "GitHub Models (GPT-4o, Claude, Gemini via GITHUB_TOKEN)", value: "github-models" },
-                { name: "Gemini CLI (coming soon)", value: "gemini", disabled: true },
+                { name: "Gemini (Google AI — uses GEMINI_API_KEY)", value: "gemini" },
               ],
               default: "claude",
             },
@@ -54,10 +54,21 @@ export function registerInitCommand(program: Command) {
                     { name: "meta/llama-4-scout", value: "meta/llama-4-scout" },
                   ];
                 }
+                if (answers.engine === "gemini") {
+                  return [
+                    { name: "gemini-2.5-pro (recommended)", value: "gemini-2.5-pro" },
+                    { name: "gemini-2.5-flash (faster, cheaper)", value: "gemini-2.5-flash" },
+                    { name: "gemini-3-flash-preview (next-gen fast)", value: "gemini-3-flash-preview" },
+                    { name: "gemini-3-pro-preview (next-gen capable)", value: "gemini-3-pro-preview" },
+                  ];
+                }
                 return ["sonnet", "opus", "haiku"];
               },
-              default: (answers: { engine: string }) =>
-                answers.engine === "github-models" ? "openai/gpt-4o" : "sonnet",
+              default: (answers: { engine: string }) => {
+                if (answers.engine === "github-models") return "openai/gpt-4o";
+                if (answers.engine === "gemini") return "gemini-2.5-pro";
+                return "sonnet";
+              },
             },
             {
               type: "input",
@@ -106,6 +117,9 @@ export function registerInitCommand(program: Command) {
         console.log(chalk.gray(`  1. Set your GitHub token:  ${chalk.yellow("export GITHUB_TOKEN=ghp_...")}  (or ${chalk.yellow("gh auth login")})`));
         if (config.engine === "github-models") {
           console.log(chalk.gray(`  2. Ensure GITHUB_TOKEN has models:read scope`));
+        } else if (config.engine === "gemini") {
+          console.log(chalk.gray(`  2. Set your Gemini API key:  ${chalk.yellow("export GEMINI_API_KEY=...")}`));
+          console.log(chalk.gray(`     Get one at: ${chalk.yellow("https://aistudio.google.com/apikey")}`));
         } else {
           console.log(chalk.gray(`  2. Ensure Claude Code is installed:  ${chalk.yellow("claude --version")}`));
         }

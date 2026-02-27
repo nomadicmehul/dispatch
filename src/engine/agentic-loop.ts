@@ -14,6 +14,8 @@ export interface AgenticLoopOptions {
   maxTurns: number;
   timeout: number;
   issueLogFile?: string;
+  /** Log prefix for debug messages (default: "agentic") */
+  logPrefix?: string;
 }
 
 export interface AgenticLoopResult {
@@ -33,6 +35,7 @@ export interface AgenticLoopResult {
  */
 export async function runAgenticLoop(options: AgenticLoopOptions): Promise<AgenticLoopResult> {
   const { client, model, messages, tools, toolOptions, maxTurns, timeout, issueLogFile } = options;
+  const prefix = options.logPrefix || "agentic";
   const startTime = Date.now();
   let turns = 0;
 
@@ -42,7 +45,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     }
 
     turns++;
-    log.debug(`[github-models] Turn ${turns}/${maxTurns}`);
+    log.debug(`[${prefix}] Turn ${turns}/${maxTurns}`);
 
     if (issueLogFile) {
       appendFile(issueLogFile, `\n--- Turn ${turns} ---\n`).catch(() => {});
@@ -58,7 +61,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
 
     const choice = response.choices[0];
     if (!choice) {
-      throw new Error("No response from GitHub Models API");
+      throw new Error(`No response from ${prefix} API`);
     }
 
     const assistantMessage = choice.message;
@@ -82,7 +85,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
       // Only handle standard function tool calls (skip custom tool types)
       if (toolCall.type !== "function") continue;
 
-      log.debug(`[github-models] Tool: ${toolCall.function.name}(${toolCall.function.arguments.substring(0, 100)})`);
+      log.debug(`[${prefix}] Tool: ${toolCall.function.name}(${toolCall.function.arguments.substring(0, 100)})`);
 
       if (issueLogFile) {
         appendFile(issueLogFile, `[tool] ${toolCall.function.name}\n`).catch(() => {});
@@ -106,7 +109,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
   }
 
   // Max turns reached — return whatever we have
-  log.warn(`[github-models] Max turns (${maxTurns}) reached`);
+  log.warn(`[${prefix}] Max turns (${maxTurns}) reached`);
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   return {
     finalContent: (lastAssistant && "content" in lastAssistant && typeof lastAssistant.content === "string" ? lastAssistant.content : "") || "",
