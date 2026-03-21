@@ -9,7 +9,7 @@
   <meta property="og:title" content="Dispatch — Solve GitHub Issues While You Sleep" />
   <meta property="og:description" content="AI-powered CLI that automatically solves GitHub issues in batch, creates branches, and opens pull requests." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://nomadicmehul.github.io/dispatch/" />
+  <meta property="og:url" content="https://dispatchai.dev/" />
   <meta property="og:image" content="https://nomadicmehul.github.io/dispatch/og-image.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -1032,8 +1032,8 @@
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔌</span>
-          <h3>Extensible Engine</h3>
-          <p>Built with a pluggable AI engine architecture. Currently powered by Claude Code with Gemini and OpenAI adapters on the roadmap.</p>
+          <h3>Multi-Engine Support</h3>
+          <p>Pluggable AI engine architecture. Ships with Claude Code, Gemini, and GitHub Models &mdash; choose the engine that fits your workflow.</p>
         </div>
       </div>
     </div>
@@ -1043,7 +1043,7 @@
   <section id="commands">
     <div class="container fade-in">
       <span class="section-label">CLI Commands</span>
-      <h2 class="section-title">Four commands, infinite productivity</h2>
+      <h2 class="section-title">Six commands, infinite productivity</h2>
       <p class="section-sub">Everything you need to manage issues with AI, from your terminal.</p>
       <div class="commands-grid">
         <div class="command-card">
@@ -1051,12 +1051,14 @@
           <p>The powerhouse. Fetches issues, classifies them, spins up AI workers, and opens pull requests &mdash; all in one command.</p>
           <div class="command-flags">
             <span class="flag">--dry-run</span>
+            <span class="flag">--engine</span>
             <span class="flag">--label</span>
             <span class="flag">--max-issues</span>
             <span class="flag">--draft</span>
             <span class="flag">--model</span>
             <span class="flag">--concurrency</span>
             <span class="flag">--base-branch</span>
+            <span class="flag">--no-telemetry</span>
           </div>
         </div>
         <div class="command-card">
@@ -1079,6 +1081,26 @@
           <p>Set up Dispatch in any repo with an interactive wizard or sensible defaults. Creates your <code style="color:var(--accent);">.dispatchrc.json</code> config.</p>
           <div class="command-flags">
             <span class="flag">--yes</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch schedule</div>
+          <p>Generate a GitHub Actions workflow for automated nightly runs. Supports multiple auth methods and AI engines.</p>
+          <div class="command-flags">
+            <span class="flag">--time</span>
+            <span class="flag">--cron</span>
+            <span class="flag">--auth</span>
+            <span class="flag">--draft</span>
+            <span class="flag">--label</span>
+            <span class="flag">--model</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch stats</div>
+          <p>View historical statistics across all runs &mdash; success rates, solve times, engine usage, confidence distributions, and recent activity.</p>
+          <div class="command-flags">
+            <span class="flag">--json</span>
+            <span class="flag">--recent</span>
           </div>
         </div>
       </div>
@@ -1185,16 +1207,22 @@
           <p>Batch issue solving, smart classification, confidence scoring, parallel processing, morning reports, and configurable pipelines.</p>
         </div>
         <div class="roadmap-item">
-          <div class="roadmap-dot active"></div>
-          <div class="roadmap-phase">In Progress</div>
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-phase">Shipped</div>
           <h4>Multi-Engine Support</h4>
-          <p>Gemini CLI and OpenAI adapters &mdash; choose the AI engine that works best for your codebase and budget.</p>
+          <p>Claude Code, Gemini, and GitHub Models engines &mdash; choose the AI that works best for your codebase and budget.</p>
         </div>
         <div class="roadmap-item">
-          <div class="roadmap-dot"></div>
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-phase">Shipped</div>
+          <h4>Scheduled Runs &amp; Telemetry</h4>
+          <p>GitHub Actions workflow generation for nightly runs. Anonymous analytics and <code style="color:var(--accent);">dispatch stats</code> for tracking performance across runs.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot active"></div>
           <div class="roadmap-phase">Next Up</div>
           <h4>Notifications &amp; Integrations</h4>
-          <p>Slack and Discord notifications when runs complete. GitHub Action for scheduled nightly runs with zero setup.</p>
+          <p>Slack, Discord, and Teams notifications when runs complete.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot"></div>
