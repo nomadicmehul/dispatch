@@ -375,11 +375,13 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 ## Roadmap
 
+- [x] Claude Code engine (default AI backend)
 - [x] Gemini engine adapter
 - [ ] OpenAI adapter
 - [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
 - [ ] Slack/Discord/Teams notifications on run completion
 - [x] GitHub Action for scheduled runs
+- [x] Telemetry and analytics (`dispatch stats`)
 - [ ] Issue decomposition (break large issues into sub-tasks)
 - [ ] Learn from PR review feedback
 - [ ] Parallel issue solving
