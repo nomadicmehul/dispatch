@@ -23,6 +23,7 @@ export function registerRunCommand(program: Command) {
     .option("--draft", "Create all PRs as drafts")
     .option("--base-branch <branch>", "Base branch for PRs (default: main)")
     .option("--concurrency <n>", "Number of issues to process in parallel", parseInt)
+    .option("--no-telemetry", "Disable anonymous telemetry for this run")
     .action(async (options) => {
       try {
         const cwd = process.cwd();

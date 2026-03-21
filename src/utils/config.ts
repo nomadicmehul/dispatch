@@ -31,6 +31,12 @@ export interface DispatchConfig {
   timeoutPerIssue: number;
   /** Number of issues to process in parallel (default: 3) */
   concurrency: number;
+  /** Enable anonymous telemetry (default: true). Set to false to opt out of remote analytics. */
+  telemetry: boolean;
+  /** PostHog host URL for self-hosted instances (default: https://app.posthog.com) */
+  posthogHost: string;
+  /** PostHog project API key (write-only). Required for remote telemetry. */
+  posthogApiKey: string;
 }
 
 const DEFAULT_CONFIG: DispatchConfig = {
@@ -48,6 +54,10 @@ const DEFAULT_CONFIG: DispatchConfig = {
   stateDir: ".dispatch",
   timeoutPerIssue: 10 * 60 * 1000, // 10 minutes
   concurrency: 3,
+  telemetry: true,
+  posthogHost: "https://app.posthog.com",
+  // Write-only key — safe to embed. Can only send events, not read data.
+  posthogApiKey: "phc_eMa9BWwKBhk6BajxBEvHLXPHH2Tjit4waJPxRf3BNwJ",
 };
 
 const CONFIG_FILENAME = ".dispatchrc.json";
@@ -59,13 +69,17 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<DispatchC
     await access(configPath);
     const raw = await readFile(configPath, "utf-8");
     const fileConfig = JSON.parse(raw) as Partial<DispatchConfig>;
-    return { ...DEFAULT_CONFIG, ...fileConfig };
+    const config = { ...DEFAULT_CONFIG, ...fileConfig };
+    applyEnvOverrides(config);
+    return config;
   } catch (err) {
     // Only warn if the file exists but failed to parse (not if it's simply missing)
     if (err instanceof SyntaxError) {
       log.warn(`Could not parse ${CONFIG_FILENAME}: ${err.message}. Using defaults.`);
     }
-    return { ...DEFAULT_CONFIG };
+    const config = { ...DEFAULT_CONFIG };
+    applyEnvOverrides(config);
+    return config;
   }
 }
 
@@ -73,6 +87,13 @@ export async function saveConfig(config: DispatchConfig, cwd: string = process.c
   const configPath = join(cwd, CONFIG_FILENAME);
   await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
   return configPath;
+}
+
+/** Apply environment variable overrides for sensitive/telemetry config */
+function applyEnvOverrides(config: DispatchConfig): void {
+  if (process.env.DISPATCH_NO_TELEMETRY === "1") config.telemetry = false;
+  if (process.env.POSTHOG_API_KEY) config.posthogApiKey = process.env.POSTHOG_API_KEY;
+  if (process.env.POSTHOG_HOST) config.posthogHost = process.env.POSTHOG_HOST;
 }
 
 export function applyCliOverrides(config: DispatchConfig, options: Record<string, unknown>): DispatchConfig {
@@ -100,6 +121,7 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
   if (options.exclude) merged.exclude = Array.isArray(options.exclude) ? options.exclude : [String(options.exclude)];
   if (options.draft !== undefined) merged.createDraftPRs = Boolean(options.draft);
   if (options.baseBranch) merged.baseBranch = String(options.baseBranch);
+  if (options.noTelemetry) merged.telemetry = false;
   if (options.concurrency) {
     const val = Number(options.concurrency);
     if (!Number.isFinite(val) || val < 1) {

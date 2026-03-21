@@ -15,6 +15,9 @@ import { heuristicClassify } from "../orchestrator/classifier.js";
 import { adjustConfidence } from "../orchestrator/scorer.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { createWorktree, removeWorktree, getWorktreePath, cleanupAllWorktrees } from "../utils/worktree.js";
+import { TelemetryCollector } from "../telemetry/collector.js";
+import { getAnonymousId, sendTelemetryEvent } from "../telemetry/remote.js";
+import { updateStats } from "../telemetry/store.js";
 
 export interface PipelineOptions {
   config: DispatchConfig;
@@ -27,6 +30,7 @@ export interface PipelineOptions {
 export async function runPipeline(options: PipelineOptions): Promise<RunSummary> {
   const { config, engine, github, cwd, dryRun = false } = options;
   const startTime = Date.now();
+  const telemetry = new TelemetryCollector();
 
   // Initialize file-based logging
   await initFileLogging(config.stateDir, cwd);
@@ -43,6 +47,8 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     excludeLabels: config.exclude,
     maxIssues: config.maxIssues,
   });
+
+  telemetry.recordIssuesChecked(allIssues.length);
 
   if (allIssues.length === 0) {
     log.info("No issues to process. All done! 🎉");
@@ -125,6 +131,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     const branchName = `${config.branchPrefix}issue-${issue.number}-${slugifyTitle(issue.title)}`;
     const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number);
     let issueStatus: "solved" | "failed" | "no-changes" = "failed";
+    const issueStartTime = Date.now();
 
     try {
       log.info(`[#${issue.number}] ${issue.title} (${issue.classification || "unknown"})`);
@@ -137,6 +144,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
       );
 
       const solveStart = Date.now();
+      telemetry.startSolve(issue.number);
       log.info(`[#${issue.number}] Solving...`);
 
       const progressInterval = setInterval(() => {
@@ -182,6 +190,17 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
       if (!hasChanges) {
         log.warn(`[#${issue.number}] No changes produced`);
         issueStatus = "no-changes";
+
+        telemetry.recordIssue({
+          issueNumber: issue.number,
+          classification: issue.classification || "unknown",
+          confidence: result.confidence,
+          solveTimeMs: Date.now() - solveStart,
+          status: "no-changes",
+          changedFileCount: 0,
+          isInvestigation,
+        });
+
         issueSummaries.push({
           number: issue.number,
           title: issue.title,
@@ -211,6 +230,17 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
       }
 
       issueStatus = "solved";
+
+      telemetry.recordIssue({
+        issueNumber: issue.number,
+        classification: issue.classification || "unknown",
+        confidence: result.confidence,
+        solveTimeMs: Date.now() - solveStart,
+        status: "solved",
+        changedFileCount: result.changedFiles.length,
+        isInvestigation,
+      });
+
       issueSummaries.push({
         number: issue.number,
         title: issue.title,
@@ -226,6 +256,19 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       log.error(`[#${issue.number}] Failed: ${errorMsg}`);
+
+      telemetry.recordIssue({
+        issueNumber: issue.number,
+        classification: issue.classification || "unknown",
+        confidence: null,
+        solveTimeMs: Date.now() - issueStartTime,
+        status: "failed",
+        failureReason: errorMsg,
+        changedFileCount: 0,
+        isInvestigation: ["investigation", "audit", "documentation"].includes(
+          issue.classification || ""
+        ),
+      });
 
       issueSummaries.push({
         number: issue.number,
@@ -263,6 +306,36 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
   await saveSummary(summary, cwd, config.stateDir);
   printSummary(summary);
+
+  // Telemetry: save local stats and optionally send remote event
+  try {
+    const anonymousId = await getAnonymousId(cwd, config.stateDir);
+    const event = telemetry.buildEvent({
+      anonymousId,
+      startedAt: summary.startedAt,
+      durationMs: summary.duration,
+      repoOwner: github.owner,
+      repoName: github.repo,
+      engine: config.engine,
+      model: config.model,
+      concurrency: config.concurrency,
+      maxIssues: config.maxIssues,
+      maxTurnsPerIssue: config.maxTurnsPerIssue,
+      draftThreshold: config.draftThreshold,
+      createDraftPRs: config.createDraftPRs,
+      prsCreated: summary.prsCreated.length,
+    });
+
+    // Always save local stats
+    await updateStats(event, cwd, config.stateDir);
+
+    // Remote send only if telemetry is enabled
+    if (config.telemetry) {
+      sendTelemetryEvent(event, config.posthogHost, config.posthogApiKey);
+    }
+  } catch (err) {
+    log.debug(`Telemetry finalization failed (non-fatal): ${err}`);
+  }
 
   return summary;
 }
