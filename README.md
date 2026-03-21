@@ -134,6 +134,16 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise), `github-models` (zero setup), `gemini` (Google AI) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
+### `dispatch stats`
+
+View historical statistics across all runs.
+
+```bash
+dispatch stats              # formatted dashboard
+dispatch stats --json       # raw JSON output
+dispatch stats --recent 20  # show last 20 runs
+```
+
 ### `dispatch init`
 
 Initialize configuration for your repository.
@@ -182,6 +192,7 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `stateDir` | Directory for dispatch state/logs | `.dispatch` |
 | `timeoutPerIssue` | Timeout per issue in milliseconds | `600000` (10 min) |
 | `concurrency` | Number of issues to process in parallel | `3` |
+| `telemetry` | Enable anonymous usage analytics | `true` |
 
 ## Issue Types
 
@@ -307,6 +318,36 @@ Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible end
 
 **How it works:** Like the GitHub Models engine, the Gemini engine runs its own agentic loop: it calls the Gemini API (via Google's OpenAI-compatible endpoint), executes tool calls locally in the worktree, and repeats until the issue is solved. No additional CLI tools need to be installed.
 
+## Telemetry
+
+Dispatch collects **anonymous usage analytics** to help improve the tool. No personally identifiable information (PII) is collected.
+
+**What's collected:**
+- Issue counts (checked, solved, failed)
+- Engine and model used
+- Solve times and confidence scores
+- Failure categories (e.g., "timeout", "rate-limit")
+
+**What's NOT collected:**
+- Repository names, issue titles, or code
+- API keys or tokens
+- Usernames or email addresses
+
+**Opt out** at any time:
+
+```bash
+# CLI flag
+dispatch run --no-telemetry
+
+# Environment variable
+export DISPATCH_NO_TELEMETRY=1
+
+# Config file (.dispatchrc.json)
+{ "telemetry": false }
+```
+
+**Local stats** are always saved to `.dispatch/stats.json` regardless of telemetry settings. View them with `dispatch stats`.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
@@ -318,7 +359,7 @@ Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible end
 
 ```
 dispatch CLI
-├── Commands (run, create, status, init, schedule)
+├── Commands (run, create, status, stats, init, schedule)
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print)
@@ -326,6 +367,7 @@ dispatch CLI
 │   └── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
 ├── Orchestrator (pipeline, classifier, scorer)
 ├── Reporter (morning summary, run history)
+├── Telemetry (anonymous analytics, local stats)
 └── Utils (config, git, logger)
 ```
 
