@@ -16,6 +16,7 @@ import { adjustConfidence } from "../orchestrator/scorer.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { createWorktree, removeWorktree, getWorktreePath, cleanupAllWorktrees } from "../utils/worktree.js";
 import { TelemetryCollector } from "../telemetry/collector.js";
+import { MemoryManager } from "../memory/manager.js";
 import { getAnonymousId, sendTelemetryEvent } from "../telemetry/remote.js";
 import { updateStats } from "../telemetry/store.js";
 
@@ -31,6 +32,12 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   const { config, engine, github, cwd, dryRun = false } = options;
   const startTime = Date.now();
   const telemetry = new TelemetryCollector();
+
+  // Initialize memory system
+  const memory = new MemoryManager({
+    stateDir: config.stateDir,
+  });
+  await memory.initialize(cwd);
 
   // Initialize file-based logging
   await initFileLogging(config.stateDir, cwd);
@@ -164,6 +171,8 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
           cwd: worktreePath,
           timeout: config.timeoutPerIssue,
           issueLogFile,
+          codebaseContext: memory.getCodebaseContextPrompt(),
+          crossIssueInsights: memory.getInsightsPrompt(),
         };
 
         if (isInvestigation) {
@@ -183,6 +192,25 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
       // Adjust confidence with heuristics
       result = adjustConfidence(result);
+
+      // Post-solve test verification
+      try {
+        const { execFile: execFileSync } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(execFileSync);
+        await execAsync(
+          "npm", ["test"],
+          { cwd: worktreePath, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 },
+        );
+        log.debug(`[#${issue.number}] Tests passed`);
+      } catch {
+        log.warn(`[#${issue.number}] Tests failed after solve — lowering confidence`);
+        result = {
+          ...result,
+          confidence: Math.max(1, result.confidence - 2),
+          uncertainties: [...result.uncertainties, "Tests failed after changes were made"],
+        };
+      }
 
       // Commit and push (operates within the worktree directory)
       const { hasChanges } = await commitAndPush(branchName, result.commitMessage, worktreePath);
@@ -230,6 +258,9 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
       }
 
       issueStatus = "solved";
+
+      // Collect insight for cross-issue learning
+      memory.addInsight(issue.number, result, issue.classification || "unknown");
 
       telemetry.recordIssue({
         issueNumber: issue.number,
@@ -291,7 +322,23 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     }
   };
 
-  await Promise.all(issues.map(processIssue));
+  // Process issues in batches for cross-issue learning
+  const batchSize = config.concurrency;
+  for (let i = 0; i < issues.length; i += batchSize) {
+    const batch = issues.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
+    const totalBatches = Math.ceil(issues.length / batchSize);
+
+    log.info(`\nBatch ${batchNum}/${totalBatches} (${batch.length} issues)`);
+
+    // Process batch in parallel (with semaphore for concurrency control)
+    await Promise.all(batch.map(processIssue));
+
+    // Log insight count between batches
+    if (memory.getInsightCollector().count > 0 && i + batchSize < issues.length) {
+      log.info(`[memory] ${memory.getInsightCollector().count} insights collected, feeding into next batch`);
+    }
+  }
 
   // 5. Generate summary
   const summary: RunSummary = {

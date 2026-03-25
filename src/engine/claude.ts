@@ -170,7 +170,10 @@ export class ClaudeEngine implements AIEngine {
   async solve(issue: Issue, context: RepoContext): Promise<SolveResult> {
     const classification = issue.classification || "code-fix";
     const systemPrompt = SYSTEM_PROMPTS[classification];
-    const issuePrompt = buildIssuePrompt(issue);
+    const issuePrompt = buildIssuePrompt(issue, {
+      codebaseContext: context.codebaseContext,
+      crossIssueInsights: context.crossIssueInsights,
+    });
 
     log.info(`Solving #${issue.number} as "${classification}" with Claude (${this.model})...`);
 
@@ -283,8 +286,28 @@ ${CONFIDENCE_PROMPT}`;
     issue: Issue,
     changedFiles: string[]
   ): Promise<{ score: number; uncertainties: string[] }> {
-    // Confidence is already scored during solve() via self-assessment
-    // This method exists for re-scoring if needed
-    return { score: 5, uncertainties: ["Re-scoring not yet implemented"] };
+    const prompt = `Review this issue and the files that were changed. Rate the likelihood the changes correctly solve the issue.
+
+Issue: #${issue.number} — ${issue.title}
+${issue.body ? issue.body.substring(0, 500) : "No description"}
+
+Changed files: ${changedFiles.join(", ")}
+
+Respond in JSON: { "score": <1-10>, "uncertainties": ["..."] }`;
+
+    try {
+      const result = await this.runClaude(prompt, {
+        maxTurns: 1,
+        allowedTools: [],
+        timeout: 30_000,
+      });
+      const parsed = this.parseJSON<{ score: number; uncertainties: string[] }>(result);
+      return {
+        score: Math.min(10, Math.max(1, Number(parsed.score) || 5)),
+        uncertainties: parsed.uncertainties || [],
+      };
+    } catch {
+      return { score: 5, uncertainties: ["Scoring failed — manual review recommended"] };
+    }
   }
 }

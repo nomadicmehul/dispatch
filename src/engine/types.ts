@@ -39,6 +39,10 @@ export interface RepoContext {
   timeout?: number;
   /** Path to per-issue log file for capturing subprocess output */
   issueLogFile?: string;
+  /** Codebase context from memory system (Tier 1) */
+  codebaseContext?: string;
+  /** Cross-issue insights from memory system (Tier 2) */
+  crossIssueInsights?: string;
 }
 
 /** Events emitted by the AI engine during solving */
@@ -62,6 +66,8 @@ export interface SolveResult {
   uncertainties: string[];
   /** Commit message used */
   commitMessage: string;
+  /** Insights extracted from this solve for cross-issue learning */
+  insights?: string[];
 }
 
 /** A structured issue ready to be posted to GitHub */

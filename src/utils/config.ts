@@ -31,6 +31,14 @@ export interface DispatchConfig {
   timeoutPerIssue: number;
   /** Number of issues to process in parallel (default: 3) */
   concurrency: number;
+  /** AI provider: "anthropic", "gemini", "github-models", "openai" (default: auto-detect) */
+  provider: string;
+  /** Model routing strategy: "auto" | "provider-locked" | "pinned" (default: "auto") */
+  routingStrategy: string;
+  /** Enable codebase context caching (Tier 1 memory) */
+  enableCodebaseContext: boolean;
+  /** Enable cross-issue learning (Tier 2 memory) */
+  enableCrossIssue: boolean;
   /** Enable anonymous telemetry (default: true). Set to false to opt out of remote analytics. */
   telemetry: boolean;
   /** PostHog host URL for self-hosted instances (default: https://app.posthog.com) */
@@ -54,6 +62,10 @@ const DEFAULT_CONFIG: DispatchConfig = {
   stateDir: ".dispatch",
   timeoutPerIssue: 10 * 60 * 1000, // 10 minutes
   concurrency: 3,
+  provider: "auto",
+  routingStrategy: "auto",
+  enableCodebaseContext: true,
+  enableCrossIssue: true,
   telemetry: true,
   posthogHost: "https://app.posthog.com",
   // Write-only key — safe to embed. Can only send events, not read data.
@@ -129,6 +141,13 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
     } else {
       merged.concurrency = Math.floor(val);
     }
+  }
+
+  if (options.provider) merged.provider = String(options.provider);
+  if (options.strategy) merged.routingStrategy = String(options.strategy);
+  if (options.noMemory) {
+    merged.enableCodebaseContext = false;
+    merged.enableCrossIssue = false;
   }
 
   return merged;

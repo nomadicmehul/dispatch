@@ -24,6 +24,9 @@ export function registerRunCommand(program: Command) {
     .option("--base-branch <branch>", "Base branch for PRs (default: main)")
     .option("--concurrency <n>", "Number of issues to process in parallel", parseInt)
     .option("--no-telemetry", "Disable anonymous telemetry for this run")
+    .option("--provider <provider>", "AI provider: anthropic, gemini, github-models, openai (default: auto)")
+    .option("--strategy <strategy>", "Model routing: auto, provider-locked, pinned (default: auto)")
+    .option("--no-memory", "Disable memory system (codebase context + cross-issue learning)")
     .action(async (options) => {
       try {
         const cwd = process.cwd();
@@ -42,26 +45,52 @@ export function registerRunCommand(program: Command) {
           log.info(`Filtering: ${config.labels.join(", ")}`);
         }
 
-        // Create engine
+        // Create engine via ModelRouter (backward-compatible with --engine flag)
+        const { ModelRouter } = await import("../router/index.js");
+
         let engine;
-        if (config.engine === "claude") {
-          engine = new ClaudeEngine({
-            model: config.model,
-            maxTurns: config.maxTurnsPerIssue,
-          });
-        } else if (config.engine === "github-models") {
-          engine = new GitHubModelsEngine({
-            model: config.model,
-            maxTurns: config.maxTurnsPerIssue,
-          });
-        } else if (config.engine === "gemini") {
-          engine = new GeminiEngine({
-            model: config.model === "sonnet" ? "gemini-2.5-pro" : config.model,
-            maxTurns: config.maxTurnsPerIssue,
-          });
+
+        // Backward compatibility: if --engine is explicitly set, use the old path
+        if (options.engine) {
+          log.debug(`Using legacy --engine flag: ${config.engine}`);
+          if (config.engine === "claude") {
+            engine = new ClaudeEngine({ model: config.model, maxTurns: config.maxTurnsPerIssue });
+          } else if (config.engine === "github-models") {
+            engine = new GitHubModelsEngine({ model: config.model, maxTurns: config.maxTurnsPerIssue });
+          } else if (config.engine === "gemini") {
+            engine = new GeminiEngine({
+              model: config.model === "sonnet" ? "gemini-2.5-pro" : config.model,
+              maxTurns: config.maxTurnsPerIssue,
+            });
+          } else {
+            log.error(`Engine "${config.engine}" is not supported.`);
+            process.exit(1);
+          }
         } else {
-          log.error(`Engine "${config.engine}" is not supported. Use "claude", "github-models", or "gemini".`);
-          process.exit(1);
+          // New path: use ModelRouter with provider detection
+          const router = new ModelRouter({
+            strategy: config.routingStrategy as any,
+            preferredProvider: config.provider !== "auto" ? config.provider as any : undefined,
+          });
+
+          const solveModel = router.getModelForPhase("solve");
+          log.info(`ModelRouter: ${solveModel.displayName} for solving (strategy: ${config.routingStrategy})`);
+
+          // Create engine based on selected provider
+          switch (solveModel.provider) {
+            case "anthropic":
+              engine = new ClaudeEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
+              break;
+            case "gemini":
+              engine = new GeminiEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
+              break;
+            case "github-models":
+              engine = new GitHubModelsEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
+              break;
+            default:
+              log.error(`Provider "${solveModel.provider}" is not yet supported.`);
+              process.exit(1);
+          }
         }
 
         // Create GitHub client

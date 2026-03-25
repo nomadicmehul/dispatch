@@ -120,7 +120,10 @@ export class GeminiEngine implements AIEngine {
   async solve(issue: Issue, context: RepoContext): Promise<SolveResult> {
     const classification = issue.classification || "code-fix";
     const systemPrompt = SYSTEM_PROMPTS[classification];
-    const issuePrompt = buildIssuePrompt(issue);
+    const issuePrompt = buildIssuePrompt(issue, {
+      codebaseContext: context.codebaseContext,
+      crossIssueInsights: context.crossIssueInsights,
+    });
 
     log.info(`Solving #${issue.number} as "${classification}" with Gemini (${this.model})...`);
 
@@ -224,9 +227,33 @@ ${CONFIDENCE_PROMPT}`;
   }
 
   async scoreConfidence(
-    _issue: Issue,
-    _changedFiles: string[],
+    issue: Issue,
+    changedFiles: string[],
   ): Promise<{ score: number; uncertainties: string[] }> {
-    return { score: 5, uncertainties: ["Re-scoring not yet implemented"] };
+    const prompt = `Review this issue and the files that were changed. Rate the likelihood the changes correctly solve the issue.
+
+Issue: #${issue.number} — ${issue.title}
+${issue.body ? issue.body.substring(0, 500) : "No description"}
+
+Changed files: ${changedFiles.join(", ")}
+
+Respond in JSON only: { "score": <1-10>, "uncertainties": ["..."] }`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.1,
+        max_tokens: 200,
+      });
+      const text = response.choices[0]?.message?.content || "";
+      const parsed = this.parseJSON<{ score: number; uncertainties: string[] }>(text);
+      return {
+        score: Math.min(10, Math.max(1, Number(parsed.score) || 5)),
+        uncertainties: parsed.uncertainties || [],
+      };
+    } catch {
+      return { score: 5, uncertainties: ["Scoring failed — manual review recommended"] };
+    }
   }
 }

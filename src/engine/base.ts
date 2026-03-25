@@ -1,7 +1,10 @@
 import type { Issue, IssueClassification } from "./types.js";
 
-/** Build a rich context prompt from an issue and its comments */
-export function buildIssuePrompt(issue: Issue): string {
+/** Build a rich context prompt from an issue, its comments, and optional memory context */
+export function buildIssuePrompt(
+  issue: Issue,
+  options?: { codebaseContext?: string; crossIssueInsights?: string },
+): string {
   let prompt = `# GitHub Issue #${issue.number}: ${issue.title}\n\n`;
 
   if (issue.labels.length > 0) {
@@ -9,6 +12,16 @@ export function buildIssuePrompt(issue: Issue): string {
   }
   prompt += `**Author:** ${issue.author}\n`;
   prompt += `**Created:** ${issue.createdAt}\n\n`;
+
+  // Inject codebase context (Tier 1 memory)
+  if (options?.codebaseContext) {
+    prompt += `${options.codebaseContext}\n\n`;
+  }
+
+  // Inject cross-issue insights (Tier 2 memory)
+  if (options?.crossIssueInsights) {
+    prompt += `${options.crossIssueInsights}\n\n`;
+  }
 
   if (issue.body) {
     prompt += `## Description\n\n${issue.body}\n\n`;
