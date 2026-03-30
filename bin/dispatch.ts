@@ -11,6 +11,8 @@ import { registerStatusCommand } from "../src/commands/status.js";
 import { registerInitCommand } from "../src/commands/init.js";
 import { registerScheduleCommand } from "../src/commands/schedule.js";
 import { registerStatsCommand } from "../src/commands/stats.js";
+import { registerProvidersCommand } from "../src/commands/providers.js";
+import { registerLearnCommand } from "../src/commands/learn.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8"));
@@ -34,6 +36,8 @@ registerStatusCommand(program);
 registerInitCommand(program);
 registerScheduleCommand(program);
 registerStatsCommand(program);
+registerProvidersCommand(program);
+registerLearnCommand(program);
 
 // Default action (no subcommand)
 program.action(() => {
@@ -53,6 +57,8 @@ program.action(() => {
   console.log(`  ${chalk.yellow("dispatch init")}       Initialize config for this repo`);
   console.log(`  ${chalk.yellow("dispatch schedule")}   Set up nightly scheduled runs`);
   console.log(`  ${chalk.yellow("dispatch stats")}      View historical run statistics`);
+  console.log(`  ${chalk.yellow("dispatch providers")}  Show detected AI providers`);
+  console.log(`  ${chalk.yellow("dispatch learn")}      Learn from PR review feedback`);
   console.log();
   console.log(chalk.gray("  Run dispatch --help for full options."));
   console.log();

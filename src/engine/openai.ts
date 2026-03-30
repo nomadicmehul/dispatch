@@ -19,28 +19,28 @@ import { SOLVE_TOOLS, READ_ONLY_TOOLS } from "./tools/definitions.js";
 import { runAgenticLoop } from "./agentic-loop.js";
 import { log } from "../utils/logger.js";
 
-interface GeminiOptions {
+interface OpenAIOptions {
   model: string;
   maxTurns: number;
 }
 
-export class GeminiEngine implements AIEngine {
-  readonly name = "gemini";
+export class OpenAIEngine implements AIEngine {
+  readonly name = "openai";
   private client: OpenAI;
   private model: string;
   private maxTurns: number;
 
-  constructor(options: GeminiOptions) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  constructor(options: OpenAIOptions) {
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "GEMINI_API_KEY or GOOGLE_API_KEY is required for the gemini engine. " +
-        "Get an API key at: https://aistudio.google.com/apikey"
+        "OPENAI_API_KEY is required for the openai engine. " +
+        "Get an API key at: https://platform.openai.com/api-keys"
       );
     }
 
     this.client = new OpenAI({
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      baseURL: "https://api.openai.com/v1",
       apiKey,
     });
 
@@ -50,17 +50,14 @@ export class GeminiEngine implements AIEngine {
 
   /** Parse JSON from a model response, handling markdown code blocks */
   private parseJSON<T>(text: string): T {
-    // Try direct parse first
     try {
       return JSON.parse(text);
     } catch {
-      // Try extracting from markdown code block
       const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1].trim());
       }
 
-      // Try finding JSON object in the text
       const objectMatch = text.match(/\{[\s\S]*\}/);
       if (objectMatch) {
         return JSON.parse(objectMatch[0]);
@@ -90,7 +87,6 @@ export class GeminiEngine implements AIEngine {
         ? Math.min(10, Math.max(1, rawConfidence))
         : 5;
 
-      // Merge AI-reported files with actually tracked file writes
       const allFiles = [...new Set([
         ...(assessment.changedFiles || []),
         ...trackedFiles,
@@ -105,7 +101,7 @@ export class GeminiEngine implements AIEngine {
         commitMessage: assessment.commitMessage || `fix: resolve issue #${issueNumber}`,
       };
     } catch {
-      log.warn("Could not parse assessment from Gemini response, using defaults");
+      log.warn("Could not parse assessment from OpenAI response, using defaults");
       return {
         success: true,
         changedFiles: trackedFiles,
@@ -125,7 +121,7 @@ export class GeminiEngine implements AIEngine {
       crossIssueInsights: context.crossIssueInsights,
     });
 
-    log.info(`Solving #${issue.number} as "${classification}" with Gemini (${this.model})...`);
+    log.info(`Solving #${issue.number} as "${classification}" with OpenAI (${this.model})...`);
 
     const combinedPrompt = `${issuePrompt}
 
@@ -139,7 +135,7 @@ ${CONFIDENCE_PROMPT}`;
     if (context.issueLogFile) {
       await writeFile(
         context.issueLogFile,
-        `--- dispatch: gemini engine started at ${new Date().toISOString()} ---\n` +
+        `--- dispatch: openai engine started at ${new Date().toISOString()} ---\n` +
         `--- model: ${this.model} | maxTurns: ${this.maxTurns} | timeout: ${Math.round(timeout / 1000)}s ---\n\n`,
       );
     }
@@ -160,10 +156,10 @@ ${CONFIDENCE_PROMPT}`;
       maxTurns: this.maxTurns,
       timeout,
       issueLogFile: context.issueLogFile,
-      logPrefix: "gemini",
+      logPrefix: "openai",
     });
 
-    log.debug(`[gemini] Completed in ${result.totalTurns} turns`);
+    log.debug(`[openai] Completed in ${result.totalTurns} turns`);
     return this.parseAssessment(result.finalContent, result.changedFiles, issue.number);
   }
 
@@ -187,7 +183,7 @@ ${CONFIDENCE_PROMPT}`;
       },
       maxTurns: 3,
       timeout: 60_000,
-      logPrefix: "gemini",
+      logPrefix: "openai",
     });
 
     return this.parseJSON<StructuredIssue>(result.finalContent);
@@ -215,7 +211,6 @@ ${CONFIDENCE_PROMPT}`;
       return text as IssueClassification;
     }
 
-    // Fuzzy matching
     if (text.includes("fix") || text.includes("bug")) return "code-fix";
     if (text.includes("feat") || text.includes("enhance")) return "feature";
     if (text.includes("invest") || text.includes("research")) return "investigation";

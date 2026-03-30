@@ -13,6 +13,14 @@ export interface IssueSummary {
   error?: string;
 }
 
+export interface CostSummary {
+  totalCostUSD: number;
+  byPhase: Record<string, number>;
+  byProvider: Record<string, number>;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+
 export interface RunSummary {
   startedAt: string;
   duration: number;
@@ -21,6 +29,12 @@ export interface RunSummary {
   totalSolved: number;
   totalFailed: number;
   prsCreated: Array<{ number: number; url: string; issueNumber: number }>;
+  costSummary?: CostSummary;
+  memoryStats?: {
+    codebaseContextLoaded: boolean;
+    insightsCollected: number;
+    lessonsLoaded: number;
+  };
 }
 
 export async function saveSummary(
@@ -105,11 +119,35 @@ export function formatMorningSummary(summary: RunSummary): string {
 
   const noChanges = summary.issues.filter((i) => i.status === "no-changes");
   if (noChanges.length > 0) {
-    lines.push(`⚪ No changes needed:`);
+    lines.push(`  No changes needed:`);
     for (const issue of noChanges) {
       lines.push(`   #${issue.number}: ${issue.title}`);
     }
     lines.push(``);
+  }
+
+  if (summary.costSummary && summary.costSummary.totalCostUSD > 0) {
+    lines.push(`  Cost Breakdown:`);
+    for (const [phase, cost] of Object.entries(summary.costSummary.byPhase)) {
+      if (cost > 0) {
+        lines.push(`   ${phase.padEnd(14)} $${cost.toFixed(4)}`);
+      }
+    }
+    lines.push(`   ${"─".repeat(30)}`);
+    lines.push(`   Total        $${summary.costSummary.totalCostUSD.toFixed(4)}`);
+    lines.push(``);
+  }
+
+  if (summary.memoryStats) {
+    const m = summary.memoryStats;
+    const parts: string[] = [];
+    if (m.codebaseContextLoaded) parts.push("context cached");
+    if (m.insightsCollected > 0) parts.push(`${m.insightsCollected} insights`);
+    if (m.lessonsLoaded > 0) parts.push(`${m.lessonsLoaded} lessons`);
+    if (parts.length > 0) {
+      lines.push(`  Memory: ${parts.join(", ")}`);
+      lines.push(``);
+    }
   }
 
   return lines.join("\n");

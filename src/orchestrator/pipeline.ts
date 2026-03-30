@@ -3,6 +3,7 @@ import ora from "ora";
 import type { AIEngine, Issue, SolveResult } from "../engine/types.js";
 import type { GitHubClient } from "../github/client.js";
 import type { DispatchConfig } from "../utils/config.js";
+import type { ModelRouter } from "../router/router.js";
 import { fetchAndHydrateIssues, prioritizeIssues, slugifyTitle } from "../github/issues.js";
 import { createPRForIssue } from "../github/pulls.js";
 import {
@@ -16,6 +17,7 @@ import { adjustConfidence } from "../orchestrator/scorer.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { createWorktree, removeWorktree, getWorktreePath, cleanupAllWorktrees } from "../utils/worktree.js";
 import { TelemetryCollector } from "../telemetry/collector.js";
+import { MemoryManager } from "../memory/manager.js";
 import { getAnonymousId, sendTelemetryEvent } from "../telemetry/remote.js";
 import { updateStats } from "../telemetry/store.js";
 
@@ -25,12 +27,24 @@ export interface PipelineOptions {
   github: GitHubClient;
   cwd: string;
   dryRun?: boolean;
+  /** Optional ModelRouter for cost tracking and per-phase routing */
+  router?: ModelRouter;
+  /** Optional: skip issues already processed (for resume) */
+  skipIssues?: number[];
 }
 
 export async function runPipeline(options: PipelineOptions): Promise<RunSummary> {
-  const { config, engine, github, cwd, dryRun = false } = options;
+  const { config, engine, github, cwd, dryRun = false, router, skipIssues = [] } = options;
   const startTime = Date.now();
   const telemetry = new TelemetryCollector();
+
+  // Initialize memory system
+  const memory = new MemoryManager({
+    stateDir: config.stateDir,
+    enableCodebaseContext: config.enableCodebaseContext,
+    enableCrossIssue: config.enableCrossIssue,
+  });
+  await memory.initialize(cwd);
 
   // Initialize file-based logging
   await initFileLogging(config.stateDir, cwd);
@@ -90,7 +104,16 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   }
 
   // 3. Prioritize
-  const issues = prioritizeIssues(allIssues);
+  let issues = prioritizeIssues(allIssues);
+
+  // Filter out already-processed issues (for --resume)
+  if (skipIssues.length > 0) {
+    const before = issues.length;
+    issues = issues.filter((i) => !skipIssues.includes(i.number));
+    if (before !== issues.length) {
+      log.info(`Resuming: skipping ${before - issues.length} already-processed issues`);
+    }
+  }
 
   log.info(`Processing ${issues.length} issues:\n`);
   for (const issue of issues) {
@@ -164,6 +187,8 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
           cwd: worktreePath,
           timeout: config.timeoutPerIssue,
           issueLogFile,
+          codebaseContext: memory.getCodebaseContextPrompt(),
+          crossIssueInsights: memory.getInsightsPrompt(),
         };
 
         if (isInvestigation) {
@@ -183,6 +208,25 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
       // Adjust confidence with heuristics
       result = adjustConfidence(result);
+
+      // Post-solve test verification
+      try {
+        const { execFile: execFileSync } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(execFileSync);
+        await execAsync(
+          "npm", ["test"],
+          { cwd: worktreePath, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 },
+        );
+        log.debug(`[#${issue.number}] Tests passed`);
+      } catch {
+        log.warn(`[#${issue.number}] Tests failed after solve — lowering confidence`);
+        result = {
+          ...result,
+          confidence: Math.max(1, result.confidence - 2),
+          uncertainties: [...result.uncertainties, "Tests failed after changes were made"],
+        };
+      }
 
       // Commit and push (operates within the worktree directory)
       const { hasChanges } = await commitAndPush(branchName, result.commitMessage, worktreePath);
@@ -231,6 +275,9 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
       issueStatus = "solved";
 
+      // Collect insight for cross-issue learning
+      memory.addInsight(issue.number, result, issue.classification || "unknown");
+
       telemetry.recordIssue({
         issueNumber: issue.number,
         classification: issue.classification || "unknown",
@@ -253,6 +300,9 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
       });
 
       log.success(`[#${issue.number}] PR #${pr.number} created (confidence: ${result.confidence}/10)`);
+
+      // Save checkpoint for resume capability
+      await saveCheckpoint(cwd, config.stateDir, issueSummaries);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       log.error(`[#${issue.number}] Failed: ${errorMsg}`);
@@ -291,7 +341,23 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     }
   };
 
-  await Promise.all(issues.map(processIssue));
+  // Process issues in batches for cross-issue learning
+  const batchSize = config.concurrency;
+  for (let i = 0; i < issues.length; i += batchSize) {
+    const batch = issues.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
+    const totalBatches = Math.ceil(issues.length / batchSize);
+
+    log.info(`\nBatch ${batchNum}/${totalBatches} (${batch.length} issues)`);
+
+    // Process batch in parallel (with semaphore for concurrency control)
+    await Promise.all(batch.map(processIssue));
+
+    // Log insight count between batches
+    if (memory.getInsightCollector().count > 0 && i + batchSize < issues.length) {
+      log.info(`[memory] ${memory.getInsightCollector().count} insights collected, feeding into next batch`);
+    }
+  }
 
   // 5. Generate summary
   const summary: RunSummary = {
@@ -302,7 +368,25 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     totalSolved: issueSummaries.filter((i) => i.status === "solved").length,
     totalFailed: issueSummaries.filter((i) => i.status === "failed").length,
     prsCreated,
+    costSummary: router ? (() => {
+      const cs = router.getCostSummary();
+      return {
+        totalCostUSD: cs.totalCostUSD,
+        byPhase: cs.byPhase as Record<string, number>,
+        byProvider: cs.byProvider,
+        totalInputTokens: cs.totalInputTokens,
+        totalOutputTokens: cs.totalOutputTokens,
+      };
+    })() : undefined,
+    memoryStats: {
+      codebaseContextLoaded: !!memory.getCodebaseContext(),
+      insightsCollected: memory.getInsightCollector().count,
+      lessonsLoaded: memory.lessonsCount,
+    },
   };
+
+  // Clear checkpoint on successful completion
+  await clearCheckpoint(cwd, config.stateDir);
 
   await saveSummary(summary, cwd, config.stateDir);
   printSummary(summary);
@@ -370,5 +454,76 @@ function printSummary(summary: RunSummary) {
       }
     }
     console.log();
+  }
+
+  // Cost breakdown
+  if (summary.costSummary && summary.costSummary.totalCostUSD > 0) {
+    console.log(chalk.bold("  Cost Breakdown:"));
+    for (const [phase, cost] of Object.entries(summary.costSummary.byPhase)) {
+      if (cost > 0) {
+        console.log(`    ${chalk.cyan(phase.padEnd(14))} $${cost.toFixed(4)}`);
+      }
+    }
+    console.log(chalk.gray(`    ${"─".repeat(30)}`));
+    console.log(`    ${chalk.bold("Total")}${" ".repeat(9)} ${chalk.yellow(`$${summary.costSummary.totalCostUSD.toFixed(4)}`)}`);
+    console.log();
+  }
+
+  // Memory stats
+  if (summary.memoryStats) {
+    const m = summary.memoryStats;
+    const parts: string[] = [];
+    if (m.codebaseContextLoaded) parts.push("context cached");
+    if (m.insightsCollected > 0) parts.push(`${m.insightsCollected} insights`);
+    if (m.lessonsLoaded > 0) parts.push(`${m.lessonsLoaded} lessons`);
+    if (parts.length > 0) {
+      console.log(chalk.gray(`  Memory: ${parts.join(", ")}`));
+      console.log();
+    }
+  }
+}
+
+/** Save checkpoint for resume capability */
+async function saveCheckpoint(
+  cwd: string,
+  stateDir: string,
+  issueSummaries: IssueSummary[],
+): Promise<void> {
+  try {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const dir = join(cwd, stateDir);
+    await mkdir(dir, { recursive: true });
+    const checkpoint = {
+      processedIssues: issueSummaries.map((i) => i.number),
+      timestamp: new Date().toISOString(),
+    };
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(checkpoint, null, 2), "utf-8");
+  } catch {
+    // Non-fatal
+  }
+}
+
+/** Clear checkpoint after successful run */
+async function clearCheckpoint(cwd: string, stateDir: string): Promise<void> {
+  try {
+    const { unlink } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    await unlink(join(cwd, stateDir, "checkpoint.json"));
+  } catch {
+    // Not found or already cleared
+  }
+}
+
+/** Load checkpoint for resume */
+export async function loadCheckpoint(cwd: string, stateDir: string): Promise<number[]> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const raw = await readFile(join(cwd, stateDir, "checkpoint.json"), "utf-8");
+    const data = JSON.parse(raw) as { processedIssues: number[] };
+    return data.processedIssues || [];
+  } catch {
+    return [];
   }
 }
