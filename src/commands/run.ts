@@ -6,8 +6,9 @@ import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
 import { GitHubModelsEngine } from "../engine/github-models.js";
 import { GeminiEngine } from "../engine/gemini.js";
-import { runPipeline } from "../orchestrator/pipeline.js";
+import { runPipeline, loadCheckpoint } from "../orchestrator/pipeline.js";
 import { log } from "../utils/logger.js";
+import type { ModelRouter as ModelRouterType } from "../router/router.js";
 
 export function registerRunCommand(program: Command) {
   program
@@ -27,6 +28,7 @@ export function registerRunCommand(program: Command) {
     .option("--provider <provider>", "AI provider: anthropic, gemini, github-models, openai (default: auto)")
     .option("--strategy <strategy>", "Model routing: auto, provider-locked, pinned (default: auto)")
     .option("--no-memory", "Disable memory system (codebase context + cross-issue learning)")
+    .option("--resume", "Resume from last checkpoint (skip already-processed issues)")
     .action(async (options) => {
       try {
         const cwd = process.cwd();
@@ -49,6 +51,7 @@ export function registerRunCommand(program: Command) {
         const { ModelRouter } = await import("../router/index.js");
 
         let engine;
+        let router: ModelRouterType | undefined;
 
         // Backward compatibility: if --engine is explicitly set, use the old path
         if (options.engine) {
@@ -68,7 +71,7 @@ export function registerRunCommand(program: Command) {
           }
         } else {
           // New path: use ModelRouter with provider detection
-          const router = new ModelRouter({
+          router = new ModelRouter({
             strategy: config.routingStrategy as any,
             preferredProvider: config.provider !== "auto" ? config.provider as any : undefined,
           });
@@ -77,6 +80,7 @@ export function registerRunCommand(program: Command) {
           log.info(`ModelRouter: ${solveModel.displayName} for solving (strategy: ${config.routingStrategy})`);
 
           // Create engine based on selected provider
+          const { OpenAIEngine } = await import("../engine/openai.js");
           switch (solveModel.provider) {
             case "anthropic":
               engine = new ClaudeEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
@@ -87,6 +91,9 @@ export function registerRunCommand(program: Command) {
             case "github-models":
               engine = new GitHubModelsEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
               break;
+            case "openai":
+              engine = new OpenAIEngine({ model: solveModel.modelId, maxTurns: config.maxTurnsPerIssue });
+              break;
             default:
               log.error(`Provider "${solveModel.provider}" is not yet supported.`);
               process.exit(1);
@@ -96,6 +103,15 @@ export function registerRunCommand(program: Command) {
         // Create GitHub client
         const github = await GitHubClient.create(owner, repo);
 
+        // Load checkpoint for resume
+        let skipIssues: number[] = [];
+        if (options.resume) {
+          skipIssues = await loadCheckpoint(cwd, config.stateDir);
+          if (skipIssues.length > 0) {
+            log.info(`Resuming: ${skipIssues.length} issues already processed`);
+          }
+        }
+
         // Run the pipeline
         const summary = await runPipeline({
           config,
@@ -103,6 +119,8 @@ export function registerRunCommand(program: Command) {
           github,
           cwd,
           dryRun: options.dryRun,
+          router,
+          skipIssues,
         });
 
         // Exit with appropriate code

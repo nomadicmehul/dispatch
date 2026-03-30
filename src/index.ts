@@ -2,6 +2,7 @@ export { runPipeline } from "./orchestrator/pipeline.js";
 export { ClaudeEngine } from "./engine/claude.js";
 export { GitHubModelsEngine } from "./engine/github-models.js";
 export { GeminiEngine } from "./engine/gemini.js";
+export { OpenAIEngine } from "./engine/openai.js";
 export { GitHubClient } from "./github/client.js";
 export { loadConfig } from "./utils/config.js";
 export { ModelRouter } from "./router/router.js";

@@ -3,6 +3,7 @@ import type { SolveResult } from "../engine/types.js";
 import { getCodebaseContext } from "./codebase-context.js";
 import { InsightCollector } from "./issue-insights.js";
 import { log } from "../utils/logger.js";
+import { loadLessonsForPrompt } from "../commands/learn.js";
 
 const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
   enableCodebaseContext: true,
@@ -25,6 +26,7 @@ export class MemoryManager {
   private config: MemoryConfig;
   private codebaseContext: CodebaseContext | null = null;
   private insightCollector: InsightCollector;
+  private lessonsPrompt: string = "";
   private initialized = false;
 
   constructor(config: Partial<MemoryConfig> = {}) {
@@ -46,7 +48,22 @@ export class MemoryManager {
         log.warn(`[memory] Failed to generate codebase context: ${err}`);
       }
     }
+    // Load lessons from previous runs (Tier 3 local)
+    try {
+      this.lessonsPrompt = await loadLessonsForPrompt(cwd, this.config.stateDir);
+      if (this.lessonsPrompt) {
+        log.debug(`[memory] Loaded lessons from previous PR reviews`);
+      }
+    } catch {
+      // No lessons yet — that's fine
+    }
+
     this.initialized = true;
+  }
+
+  /** Get the count of loaded lessons */
+  get lessonsCount(): number {
+    return this.lessonsPrompt ? this.lessonsPrompt.split("\n- ").length - 1 : 0;
   }
 
   /** Get formatted codebase context for prompt injection */
@@ -68,6 +85,11 @@ export class MemoryManager {
     return this.insightCollector.formatForPrompt();
   }
 
+  /** Get lessons prompt */
+  getLessonsPrompt(): string {
+    return this.lessonsPrompt;
+  }
+
   /** Get all memory context formatted for prompt injection */
   getFullContextPrompt(): string {
     const parts: string[] = [];
@@ -77,6 +99,8 @@ export class MemoryManager {
 
     const insights = this.getInsightsPrompt();
     if (insights) parts.push(insights);
+
+    if (this.lessonsPrompt) parts.push(this.lessonsPrompt);
 
     return parts.join("\n\n");
   }

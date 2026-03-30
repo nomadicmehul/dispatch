@@ -63,6 +63,37 @@ export async function detectProviders(): Promise<DetectedProvider[]> {
   return results;
 }
 
+/** Get all detected providers with their status */
+export function getDetectedProvidersSummary(): DetectedProvider[] {
+  // Sync version for display purposes
+  const results: DetectedProvider[] = [];
+  const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+  results.push({
+    provider: "anthropic",
+    available: hasAnthropicKey,
+    reason: hasAnthropicKey ? "ANTHROPIC_API_KEY set" : "No ANTHROPIC_API_KEY",
+  });
+  const hasGeminiKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  results.push({
+    provider: "gemini",
+    available: hasGeminiKey,
+    reason: hasGeminiKey ? "API key set" : "No GEMINI_API_KEY or GOOGLE_API_KEY",
+  });
+  const hasGHToken = !!process.env.GITHUB_TOKEN;
+  results.push({
+    provider: "github-models",
+    available: hasGHToken,
+    reason: hasGHToken ? "GITHUB_TOKEN set" : "No GITHUB_TOKEN",
+  });
+  const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
+  results.push({
+    provider: "openai",
+    available: hasOpenAIKey,
+    reason: hasOpenAIKey ? "OPENAI_API_KEY set" : "No OPENAI_API_KEY",
+  });
+  return results;
+}
+
 /** Get the first available provider, preferring in order: anthropic > gemini > github-models > openai */
 export async function getDefaultProvider(): Promise<AIProvider | null> {
   const providers = await detectProviders();

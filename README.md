@@ -10,7 +10,7 @@
 
 **Dispatch your GitHub issues. Receive pull requests.**
 
-Dispatch is an AI-powered CLI tool that solves GitHub issues in batch — creating branches, implementing fixes, and opening pull requests while you sleep.
+Dispatch is an AI-powered CLI tool that solves GitHub issues in batch — creating branches, implementing fixes, and opening pull requests while you sleep. v2 adds smart model routing, a memory system that learns across issues and runs, cost tracking, and support for 4 AI providers.
 
 Run it at night. Review PRs in the morning.
 
@@ -44,12 +44,15 @@ dispatch schedule
 Fetches open issues, classifies them, solves each one with AI, and opens pull requests.
 
 ```bash
-dispatch run                          # solve all open issues
+dispatch run                          # solve all open issues (auto-detect provider)
 dispatch run --dry-run                # preview without making changes
 dispatch run --label bug --label p0   # only solve bugs and P0 issues
 dispatch run --max-issues 5           # limit to 5 issues
 dispatch run --draft                  # create all PRs as drafts
-dispatch run --model opus             # use a specific model
+dispatch run --provider gemini        # use a specific AI provider
+dispatch run --strategy cost-optimized  # optimize for lowest cost
+dispatch run --no-memory              # disable memory system
+dispatch run --resume                 # resume from last checkpoint
 dispatch run --base-branch develop    # target a different base branch
 ```
 
@@ -57,13 +60,16 @@ dispatch run --base-branch develop    # target a different base branch
 1. Fetches open issues from your GitHub repo
 2. Classifies each issue (bug fix, feature, investigation, audit, docs, refactor)
 3. Prioritizes by labels (P0 → P1 → P2) and reactions
-4. For each issue:
+4. Loads memory context (codebase cache, past insights, PR lessons)
+5. For each batch of issues:
    - Creates a branch (`dispatch/issue-42-fix-login-bug`)
-   - Invokes Claude Code to solve it
+   - Invokes AI (routed per phase: cheap for classify/score, strong for solve)
    - Self-assesses confidence (1-10)
+   - Runs tests to verify changes
    - Commits, pushes, and opens a PR
-5. Low-confidence solutions become draft PRs
-6. Generates a morning summary report
+   - Saves insights for the next batch
+6. Low-confidence or test-failing solutions become draft PRs
+7. Generates a summary report with cost breakdown
 
 ### `dispatch create`
 
@@ -82,11 +88,30 @@ dispatch create "add rate limiting to public endpoints" --no-post
 
 ### `dispatch status`
 
-View results from the last run.
+View results from the last run, including cost breakdown, memory state, and provider config.
 
 ```bash
-dispatch status          # pretty-printed morning report
-dispatch status --json   # raw JSON output
+dispatch status            # pretty-printed morning report
+dispatch status --json     # raw JSON output
+dispatch status --memory   # show memory system details
+```
+
+### `dispatch providers`
+
+Show detected AI providers and model routing configuration.
+
+```bash
+dispatch providers         # show providers, routing, and registered models
+```
+
+### `dispatch learn`
+
+Scan Dispatch-created PRs for review feedback and extract lessons. Lessons are stored locally and fed into future solves.
+
+```bash
+dispatch learn             # scan PRs and extract lessons
+dispatch learn --show      # show current lessons without scanning
+dispatch learn --max-prs 20  # limit scan to 20 PRs
 ```
 
 ### `dispatch schedule`
@@ -172,14 +197,20 @@ Dispatch reads `.dispatchrc.json` from your repo root:
   "draftThreshold": 5,
   "stateDir": ".dispatch",
   "timeoutPerIssue": 600000,
-  "concurrency": 3
+  "concurrency": 3,
+  "provider": "auto",
+  "routingStrategy": "auto",
+  "enableCodebaseContext": true,
+  "enableCrossIssue": true
 }
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `engine` | AI backend (`claude`, `github-models`, `gemini`) | `claude` |
-| `model` | Model name (`sonnet`/`opus`/`haiku` for Claude; `openai/gpt-4o` etc. for GitHub Models; `gemini-2.5-pro` etc. for Gemini) | `sonnet` |
+| `engine` | AI backend (`claude`, `github-models`, `gemini`) — legacy, prefer `provider` | `claude` |
+| `model` | Model name — legacy, prefer `routingStrategy` | `sonnet` |
+| `provider` | AI provider (`auto`, `anthropic`, `gemini`, `github-models`, `openai`) | `auto` |
+| `routingStrategy` | Model routing (`auto`, `provider-locked`, `pinned`) | `auto` |
 | `labels` | Only process issues with these labels (empty = all) | `[]` |
 | `exclude` | Skip issues with these labels | `["wontfix", "blocked", "duplicate"]` |
 | `maxIssues` | Max issues per run | `10` |
@@ -192,6 +223,8 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `stateDir` | Directory for dispatch state/logs | `.dispatch` |
 | `timeoutPerIssue` | Timeout per issue in milliseconds | `600000` (10 min) |
 | `concurrency` | Number of issues to process in parallel | `3` |
+| `enableCodebaseContext` | Cache and reuse codebase analysis (Tier 1 memory) | `true` |
+| `enableCrossIssue` | Share insights across issues in a run (Tier 2 memory) | `true` |
 | `telemetry` | Enable anonymous usage analytics | `true` |
 
 ## Issue Types
@@ -318,6 +351,83 @@ Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible end
 
 **How it works:** Like the GitHub Models engine, the Gemini engine runs its own agentic loop: it calls the Gemini API (via Google's OpenAI-compatible endpoint), executes tool calls locally in the worktree, and repeats until the issue is solved. No additional CLI tools need to be installed.
 
+### OpenAI (Direct API)
+
+Uses the [OpenAI API](https://platform.openai.com/) directly. Requires an `OPENAI_API_KEY`.
+
+```json
+{
+  "provider": "openai"
+}
+```
+
+**Available models:**
+- `gpt-4.1` — Most capable (recommended for solving)
+- `gpt-4.1-mini` — Faster and cheaper (good for classify/score)
+- `o3-mini` — Reasoning model
+
+**Setup:**
+1. Get an API key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Set it: `export OPENAI_API_KEY=sk-...`
+3. Run `dispatch run --provider openai`
+
+## Model Routing (v2)
+
+Instead of using one model for everything, Dispatch v2 picks the **optimal model for each phase** of the pipeline. Classification doesn't need the same model as code generation.
+
+```bash
+dispatch run                           # auto: haiku for classify, sonnet for solve
+dispatch run --provider gemini         # provider-locked: flash for classify, pro for solve
+dispatch run --engine claude           # legacy: sonnet for everything (backward compatible)
+```
+
+**Routing strategies:**
+| Strategy | Flag | Behavior |
+|----------|------|----------|
+| `auto` (default) | — | Picks cheapest model for classify/score, strongest for solve, across all detected providers |
+| `provider-locked` | `--provider gemini` | Uses only models from one provider, still routing cheap/strong per phase |
+| `pinned` | `--engine claude` | Uses one model for all phases (v1 behavior) |
+
+**Cost savings:** Smart routing typically saves ~40% vs using the strongest model for everything.
+
+Run `dispatch providers` to see your current routing configuration and available models.
+
+## Memory System (v2)
+
+Dispatch v2 includes a 3-tier memory system that makes the AI smarter over time.
+
+### Tier 1 — Codebase Context Cache
+
+On first run, Dispatch analyzes your repo (file tree, package.json, patterns, conventions) and caches it at `.dispatch/memory/context.json`. This context is injected into every solve prompt, eliminating redundant codebase exploration.
+
+### Tier 2 — Cross-Issue Learning
+
+When issue #1 discovers project patterns, that knowledge feeds into issue #5. The pipeline processes issues in batches — insights from batch N are injected into batch N+1.
+
+### Tier 3 — PR Review Lessons (Local)
+
+After runs, `dispatch learn` scans your Dispatch-created PRs for review feedback and extracts lessons. These lessons are stored locally with a 30-day decay and injected into future solves at low priority.
+
+```bash
+dispatch learn                # scan PRs for feedback
+dispatch learn --show         # view current lessons
+```
+
+**Disable memory:**
+```bash
+dispatch run --no-memory      # skip all memory injection
+```
+
+## Checkpoint & Resume (v2)
+
+If a run crashes at issue 7/10, you don't have to start over:
+
+```bash
+dispatch run --resume         # skips already-processed issues
+```
+
+Progress is saved to `.dispatch/checkpoint.json` after each issue. The checkpoint is cleared on successful completion.
+
 ## Telemetry
 
 Dispatch collects **anonymous usage analytics** to help improve the tool. No personally identifiable information (PII) is collected.
@@ -359,30 +469,48 @@ export DISPATCH_NO_TELEMETRY=1
 
 ```
 dispatch CLI
-├── Commands (run, create, status, stats, init, schedule)
-├── GitHub Client (octokit — issues, PRs, labels)
+├── Commands (run, create, status, stats, init, schedule, providers, learn)
+├── ModelRouter (per-phase model selection, cost tracking)
+├── Memory System (codebase context, cross-issue insights, PR lessons)
+├── GitHub Client (octokit — issues, PRs, comments, labels)
 ├── Engine Layer (pluggable AI adapters)
-│   └── Claude Adapter (claude CLI --print)
-│   └── GitHub Models Adapter (openai SDK + local tool execution)
-│   └── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
-├── Orchestrator (pipeline, classifier, scorer)
-├── Reporter (morning summary, run history)
+│   ├── Claude Adapter (claude CLI --print)
+│   ├── GitHub Models Adapter (openai SDK + local tool execution)
+│   ├── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
+│   └── OpenAI Adapter (openai SDK + direct API)
+├── Orchestrator (batched pipeline, classifier, scorer, checkpoint)
+├── Reporter (morning summary, cost breakdown, run history)
 ├── Telemetry (anonymous analytics, local stats)
-└── Utils (config, git, logger)
+└── Utils (config, git, logger, worktree, semaphore)
 ```
 
 The engine adapter pattern makes adding new AI backends trivial — implement the `AIEngine` interface and you're done.
 
 ## Roadmap
 
+### Completed (v2 Community)
 - [x] Claude Code engine (default AI backend)
 - [x] Gemini engine adapter
-- [ ] OpenAI adapter
-- [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
-- [ ] Slack/Discord/Teams notifications on run completion
+- [x] OpenAI engine adapter (direct API)
+- [x] GitHub Models engine (use GPT-4.1/Claude via GITHUB_TOKEN — zero setup)
+- [x] Smart model routing (ModelRouter — per-phase model selection)
+- [x] Codebase context caching (Tier 1 memory)
+- [x] Cross-issue learning within runs (Tier 2 memory)
+- [x] Learn from PR review feedback (`dispatch learn` — Tier 3 local memory)
+- [x] Batched parallel issue solving with insight sharing
+- [x] Post-solve test verification
+- [x] Cost tracking and per-run cost breakdown
+- [x] Checkpoint/resume for crashed runs
+- [x] Provider detection and diagnostics (`dispatch providers`)
 - [x] GitHub Action for scheduled runs
 - [x] Telemetry and analytics (`dispatch stats`)
+
+### Planned (Pro/Enterprise)
+- [ ] Web dashboard (dispatch.dev) — run history, PR dashboard, analytics
+- [ ] Cross-run persistent memory (Tier 3 cloud sync)
+- [ ] GitLab and Bitbucket integration
+- [ ] Managed AI proxy (no API keys needed)
+- [ ] Slack/Discord/Teams notifications
+- [ ] Visual workflow builder
+- [ ] Team management and shared memory
 - [ ] Issue decomposition (break large issues into sub-tasks)
-- [ ] Learn from PR review feedback
-- [ ] Parallel issue solving
-- [ ] Web dashboard for run history

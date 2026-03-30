@@ -62,6 +62,34 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     maxContextTokens: 128_000,
     recommendedPhases: ["classify", "score"],
   },
+  // OpenAI (direct API)
+  {
+    provider: "openai",
+    modelId: "gpt-4.1",
+    displayName: "GPT-4.1",
+    inputCostPer1M: 2,
+    outputCostPer1M: 8,
+    maxContextTokens: 1_000_000,
+    recommendedPhases: ["classify", "solve", "score", "create-issue"],
+  },
+  {
+    provider: "openai",
+    modelId: "gpt-4.1-mini",
+    displayName: "GPT-4.1 Mini",
+    inputCostPer1M: 0.4,
+    outputCostPer1M: 1.6,
+    maxContextTokens: 1_000_000,
+    recommendedPhases: ["classify", "score"],
+  },
+  {
+    provider: "openai",
+    modelId: "o3-mini",
+    displayName: "o3-mini",
+    inputCostPer1M: 1.1,
+    outputCostPer1M: 4.4,
+    maxContextTokens: 200_000,
+    recommendedPhases: ["solve", "create-issue"],
+  },
 ];
 
 /** Find a model spec by ID (exact match) */

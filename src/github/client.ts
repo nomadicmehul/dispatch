@@ -219,6 +219,85 @@ export class GitHubClient {
     });
   }
 
+  /** List pull requests created by Dispatch (matching branch prefix) */
+  async listDispatchPRs(options: {
+    branchPrefix: string;
+    state?: "open" | "closed" | "all";
+    maxPRs?: number;
+  }): Promise<Array<{
+    number: number;
+    title: string;
+    state: string;
+    merged: boolean;
+    headBranch: string;
+    url: string;
+    createdAt: string;
+    closedAt: string | null;
+  }>> {
+    const { branchPrefix, state = "all", maxPRs = 100 } = options;
+    const prs = await this.octokit.paginate(
+      this.octokit.pulls.list,
+      {
+        owner: this.owner,
+        repo: this.repo,
+        state: state as "open" | "closed" | "all",
+        per_page: Math.min(maxPRs, 100),
+        sort: "created",
+        direction: "desc",
+      },
+      (response, done) => {
+        if (response.data.length >= maxPRs) done();
+        return response.data;
+      }
+    );
+
+    return prs
+      .filter((pr) => pr.head.ref.startsWith(branchPrefix))
+      .slice(0, maxPRs)
+      .map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        merged: !!pr.merged_at,
+        headBranch: pr.head.ref,
+        url: pr.html_url,
+        createdAt: pr.created_at,
+        closedAt: pr.closed_at,
+      }));
+  }
+
+  /** Fetch review comments on a PR */
+  async fetchPRReviewComments(prNumber: number): Promise<Array<{
+    author: string;
+    body: string;
+    createdAt: string;
+  }>> {
+    const comments = await this.octokit.paginate(
+      this.octokit.pulls.listReviewComments,
+      {
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: prNumber,
+        per_page: 100,
+      }
+    );
+
+    return comments.map((c) => ({
+      author: c.user?.login || "unknown",
+      body: c.body || "",
+      createdAt: c.created_at,
+    }));
+  }
+
+  /** Fetch issue comments on a PR (general discussion, not inline review) */
+  async fetchPRIssueComments(prNumber: number): Promise<Array<{
+    author: string;
+    body: string;
+    createdAt: string;
+  }>> {
+    return this.fetchIssueComments(prNumber);
+  }
+
   /** Add a label to an issue */
   async addLabel(issueNumber: number, label: string): Promise<void> {
     try {
