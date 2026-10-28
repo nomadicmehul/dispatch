@@ -208,7 +208,7 @@ scoop install dispatch
 ### Create PKGBUILD
 
 ```bash
-# Maintainer: Mehul Patel <mehul.patel@buildingminds.com>
+# Maintainer: Mehul Patel <nomadicmehul@gmail.com>
 pkgname=dispatch-ai
 pkgver=0.1.0
 pkgrel=1
