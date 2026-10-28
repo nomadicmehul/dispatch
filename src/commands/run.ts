@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { loadConfig, applyCliOverrides } from "../utils/config.js";
 import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
@@ -8,6 +10,19 @@ import { GitHubModelsEngine } from "../engine/github-models.js";
 import { GeminiEngine } from "../engine/gemini.js";
 import { runPipeline } from "../orchestrator/pipeline.js";
 import { log } from "../utils/logger.js";
+
+const exec = promisify(execFile);
+
+/** Fail fast with install instructions if the Claude Code CLI is missing */
+async function assertClaudeInstalled(): Promise<void> {
+  try {
+    const { stdout } = await exec("claude", ["--version"]);
+    log.debug(`Claude Code: ${stdout.trim()}`);
+  } catch {
+    log.error("Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code");
+    process.exit(1);
+  }
+}
 
 export function registerRunCommand(program: Command) {
   program
@@ -23,6 +38,12 @@ export function registerRunCommand(program: Command) {
     .option("--draft", "Create all PRs as drafts")
     .option("--base-branch <branch>", "Base branch for PRs (default: main)")
     .option("--concurrency <n>", "Number of issues to process in parallel", parseInt)
+    .option("--verify-command <cmd>", "Command that verifies changes (default: auto-detect; 'none' to skip)")
+    .option("--min-readiness <n>", "Minimum readiness score (0-10) for an issue to be dispatched", parseFloat)
+    .option("--max-cost <usd>", "Spend cap for this run in USD", parseFloat)
+    .option("--max-cost-per-issue <usd>", "Spend cap per issue in USD", parseFloat)
+    .option("--provenance <mode>", "Session records: local, ref (also push to refs/dispatch/sessions), or off")
+    .option("--no-repo-brief", "Don't give agents the shared repository brief")
     .option("--no-telemetry", "Disable anonymous telemetry for this run")
     .action(async (options) => {
       try {
@@ -45,6 +66,7 @@ export function registerRunCommand(program: Command) {
         // Create engine
         let engine;
         if (config.engine === "claude") {
+          if (!options.dryRun) await assertClaudeInstalled();
           engine = new ClaudeEngine({
             model: config.model,
             maxTurns: config.maxTurnsPerIssue,

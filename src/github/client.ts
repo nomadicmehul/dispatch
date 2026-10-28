@@ -71,6 +71,7 @@ export class GitHubClient {
     body: string | null;
     labels: string[];
     user: string;
+    author_association: string;
     html_url: string;
     created_at: string;
     reactions: number;
@@ -78,12 +79,14 @@ export class GitHubClient {
   }>> {
     const { labels = [], excludeLabels = [], maxIssues = 30 } = options;
 
+    // Recently active issues first; callers fetch more than they will solve so that
+    // filtering (trust, readiness, existing branches) doesn't starve the run.
     const params: Record<string, unknown> = {
       owner: this.owner,
       repo: this.repo,
       state: "open" as const,
       per_page: Math.min(maxIssues, 100),
-      sort: "created" as const,
+      sort: "updated" as const,
       direction: "desc" as const,
     };
 
@@ -126,6 +129,7 @@ export class GitHubClient {
       body: issue.body ?? null,
       labels: issue.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string }).name || "")),
       user: issue.user?.login || "unknown",
+      author_association: issue.author_association || "NONE",
       html_url: issue.html_url,
       created_at: issue.created_at,
       reactions: (issue.reactions as { total_count?: number })?.total_count || 0,
@@ -136,6 +140,7 @@ export class GitHubClient {
   /** Fetch comments for an issue (paginated) */
   async fetchIssueComments(issueNumber: number): Promise<Array<{
     author: string;
+    authorAssociation: string;
     body: string;
     createdAt: string;
   }>> {
@@ -151,6 +156,7 @@ export class GitHubClient {
 
     return comments.map((c) => ({
       author: c.user?.login || "unknown",
+      authorAssociation: c.author_association || "NONE",
       body: c.body || "",
       createdAt: c.created_at,
     }));

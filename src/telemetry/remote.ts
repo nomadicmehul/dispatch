@@ -47,9 +47,8 @@ export function sendTelemetryEvent(
     event: event.eventType,
     distinct_id: event.anonymousId,
     timestamp: event.timestamp,
+    // Repository names stay local (stats.json): they can identify private projects
     properties: {
-      repo_owner: event.repoOwner,
-      repo_name: event.repoName,
       engine: event.engine,
       model: event.model,
       concurrency: event.concurrency,

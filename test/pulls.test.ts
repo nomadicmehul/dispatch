@@ -88,3 +88,50 @@ describe("buildPRBody", () => {
     assert.ok(body.includes("feature"));
   });
 });
+
+describe("buildPRBody with evidence and provenance", () => {
+  const details = {
+    assessment: {
+      confidence: 9,
+      selfConfidence: 7,
+      lane: "ready" as const,
+      signals: [
+        { ok: null, label: "Agent self-assessed 7/10" },
+        { ok: true, label: "`npm test` passed" },
+        { ok: false, label: "No test changes" },
+      ],
+    },
+    verify: { command: "npm test", status: "passed" as const, repairs: 1 },
+    heldBack: [".env"],
+    session: { id: "3f9a1c2b-0000-4000-8000-000000000000", engine: "claude", model: "sonnet", costUsd: 0.42, turns: 18 },
+  };
+
+  it("uses the evidence-based confidence and shows the lane", () => {
+    const body = buildPRBody(makeIssue(), makeResult({ confidence: 7 }), "", details);
+    assert.ok(body.includes("9/10"));
+    assert.ok(body.includes("Ready to merge"));
+  });
+
+  it("lists evidence, repairs, and held-back files", () => {
+    const body = buildPRBody(makeIssue(), makeResult(), "", details);
+    assert.ok(body.includes("### Evidence"));
+    assert.ok(body.includes("✅ `npm test` passed"));
+    assert.ok(body.includes("⚠️ No test changes"));
+    assert.ok(body.includes("Passed after 1 repair attempt"));
+    assert.ok(body.includes("### 🔒 Held Back") && body.includes("`.env`"));
+  });
+
+  it("links the session with cost and the explain/resume commands", () => {
+    const body = buildPRBody(makeIssue(), makeResult(), "", details);
+    assert.ok(body.includes("`3f9a1c2b-0000-4000-8000-000000000000`"));
+    assert.ok(body.includes("$0.42 · 18 turns"));
+    assert.ok(body.includes("dispatch explain 42"));
+    assert.ok(body.includes("dispatch resume 42"));
+  });
+
+  it("includes failing verification output", () => {
+    const failed = { ...details, verify: { command: "npm test", status: "failed" as const, repairs: 0, outputTail: "AssertionError: expected 1" } };
+    const body = buildPRBody(makeIssue(), makeResult(), "", failed);
+    assert.ok(body.includes("AssertionError: expected 1"));
+  });
+});

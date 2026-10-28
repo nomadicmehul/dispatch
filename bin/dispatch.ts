@@ -11,6 +11,8 @@ import { registerStatusCommand } from "../src/commands/status.js";
 import { registerInitCommand } from "../src/commands/init.js";
 import { registerScheduleCommand } from "../src/commands/schedule.js";
 import { registerStatsCommand } from "../src/commands/stats.js";
+import { registerExplainCommand } from "../src/commands/explain.js";
+import { registerResumeCommand } from "../src/commands/resume.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8"));
@@ -34,6 +36,8 @@ registerStatusCommand(program);
 registerInitCommand(program);
 registerScheduleCommand(program);
 registerStatsCommand(program);
+registerExplainCommand(program);
+registerResumeCommand(program);
 
 // Default action (no subcommand)
 program.action(() => {
@@ -49,7 +53,9 @@ program.action(() => {
   console.log();
   console.log(`  ${chalk.yellow("dispatch run")}        Solve open issues and create PRs`);
   console.log(`  ${chalk.yellow("dispatch create")}     Create well-structured issues`);
-  console.log(`  ${chalk.yellow("dispatch status")}     View last run summary`);
+  console.log(`  ${chalk.yellow("dispatch status")}     View last run's review queue`);
+  console.log(`  ${chalk.yellow("dispatch explain")}    See how a PR was made (evidence, cost, timeline)`);
+  console.log(`  ${chalk.yellow("dispatch resume")}     Pick up a session in Claude Code`);
   console.log(`  ${chalk.yellow("dispatch init")}       Initialize config for this repo`);
   console.log(`  ${chalk.yellow("dispatch schedule")}   Set up nightly scheduled runs`);
   console.log(`  ${chalk.yellow("dispatch stats")}      View historical run statistics`);

@@ -95,7 +95,7 @@ describe("generateWorkflow (api-key)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// generateWorkflow — claude-code (enterprise)
+// generateWorkflow — claude-code (Claude subscription token)
 // ---------------------------------------------------------------------------
 describe("generateWorkflow (claude-code)", () => {
   const yaml = generateWorkflow("0 2 * * *", 10, false, [], "claude-code");
@@ -108,20 +108,18 @@ describe("generateWorkflow (claude-code)", () => {
     assert.ok(!yaml.includes("ANTHROPIC_API_KEY"));
   });
 
-  it("includes id-token write permission for OIDC", () => {
-    assert.ok(yaml.includes("id-token: write"));
+  it("uses the CLAUDE_CODE_OAUTH_TOKEN secret", () => {
+    assert.ok(yaml.includes("CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"));
   });
 
-  it("uses anthropic/claude-code-action", () => {
-    assert.ok(yaml.includes("anthropic/claude-code-action@v1"));
+  it("runs the Claude Code CLI directly, not a nested action", () => {
+    assert.ok(yaml.includes("npm install -g @anthropic-ai/claude-code"));
+    assert.ok(!yaml.includes("claude-code-action"));
+    assert.ok(!yaml.includes("id-token"));
   });
 
   it("installs dispatch-ai@beta", () => {
     assert.ok(yaml.includes("dispatch-ai@beta"));
-  });
-
-  it("does NOT install claude code CLI separately (action handles it)", () => {
-    assert.ok(!yaml.includes("@anthropic-ai/claude-code"));
   });
 
   it("includes --draft flag when draft is true", () => {
@@ -133,6 +131,23 @@ describe("generateWorkflow (claude-code)", () => {
     const labelYaml = generateWorkflow("0 2 * * *", 10, false, ["bug"], "claude-code");
     assert.ok(labelYaml.includes("--label bug"));
   });
+});
+
+// ---------------------------------------------------------------------------
+// generateWorkflow — Claude workflows let CI run on Dispatch PRs
+// ---------------------------------------------------------------------------
+describe("generateWorkflow (Claude CI token)", () => {
+  for (const auth of ["api-key", "claude-code"] as const) {
+    const yaml = generateWorkflow("0 2 * * *", 10, false, [], auth);
+
+    it(`${auth}: prefers DISPATCH_GITHUB_TOKEN for API calls`, () => {
+      assert.ok(yaml.includes("GITHUB_TOKEN: ${{ secrets.DISPATCH_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"));
+    });
+
+    it(`${auth}: checks out with DISPATCH_GITHUB_TOKEN so pushes can trigger CI`, () => {
+      assert.ok(yaml.includes("token: ${{ secrets.DISPATCH_GITHUB_TOKEN || github.token }}"));
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

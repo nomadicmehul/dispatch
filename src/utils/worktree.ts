@@ -47,6 +47,32 @@ export async function createWorktree(
 }
 
 /**
+ * Create a git worktree that checks out an existing branch from origin
+ * (used by `dispatch resume` to continue work on a Dispatch PR).
+ */
+export async function createWorktreeFromBranch(
+  worktreePath: string,
+  branchName: string,
+  cwd: string
+): Promise<void> {
+  try {
+    await access(worktreePath);
+    await removeWorktree(worktreePath, cwd);
+  } catch {
+    // Path doesn't exist, good
+  }
+
+  try {
+    await git(["worktree", "prune"], cwd);
+  } catch {
+    // ignore prune errors
+  }
+
+  await git(["fetch", "origin", branchName], cwd);
+  await git(["worktree", "add", "-B", branchName, worktreePath, `origin/${branchName}`], cwd);
+}
+
+/**
  * Remove a git worktree and optionally delete the associated branch.
  */
 export async function removeWorktree(

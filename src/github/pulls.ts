@@ -1,29 +1,83 @@
 import type { Issue, SolveResult } from "../engine/types.js";
 import type { GitHubClient } from "./client.js";
+import type { Assessment } from "../orchestrator/scorer.js";
+import { LANE_LABELS } from "../orchestrator/scorer.js";
+import type { VerifyOutcome } from "../orchestrator/verify.js";
 import { log } from "../utils/logger.js";
+
+/** Evidence and provenance shown in the PR body, when available */
+export interface PRDetails {
+  assessment?: Assessment;
+  verify?: VerifyOutcome;
+  /** Files Dispatch did not commit because they look like secrets */
+  heldBack?: string[];
+  session?: {
+    id: string;
+    engine: string;
+    model: string;
+    costUsd?: number;
+    turns?: number;
+  };
+}
+
+function signalIcon(ok: boolean | null): string {
+  if (ok === true) return "✅";
+  if (ok === false) return "⚠️";
+  return "➖";
+}
 
 /** Build a well-formatted PR body */
 export function buildPRBody(
   issue: Issue,
   result: SolveResult,
-  diffSummary: string
+  diffSummary: string,
+  details: PRDetails = {}
 ): string {
+  const confidence = details.assessment?.confidence ?? result.confidence;
   const confidenceEmoji =
-    result.confidence >= 8 ? "🟢" :
-    result.confidence >= 5 ? "🟡" :
+    confidence >= 8 ? "🟢" :
+    confidence >= 5 ? "🟡" :
     "🔴";
 
   let body = `## ⚡ Solved by Dispatch\n\n`;
   body += `**Issue:** #${issue.number} — ${issue.title}\n`;
-  body += `**Confidence:** ${confidenceEmoji} ${result.confidence}/10\n`;
-  body += `**Type:** ${issue.classification || "unknown"}\n\n`;
+  body += `**Confidence:** ${confidenceEmoji} ${confidence}/10`;
+  if (details.assessment) {
+    body += ` · **Lane:** ${LANE_LABELS[details.assessment.lane]}`;
+  }
+  body += `\n**Type:** ${issue.classification || "unknown"}\n\n`;
 
   body += `### Summary\n\n${result.summary}\n\n`;
+
+  if (details.assessment && details.assessment.signals.length > 0) {
+    body += `### Evidence\n\n`;
+    for (const signal of details.assessment.signals) {
+      body += `- ${signalIcon(signal.ok)} ${signal.label}\n`;
+    }
+    if (details.verify?.repairs) {
+      body += `- ➖ Passed after ${details.verify.repairs} repair attempt${details.verify.repairs === 1 ? "" : "s"}\n`;
+    }
+    body += `\n`;
+  }
+
+  if (details.verify?.status === "failed" && details.verify.outputTail) {
+    body += `<details><summary>Verification output (<code>${details.verify.command}</code>)</summary>\n\n`;
+    body += `\`\`\`\n${details.verify.outputTail.slice(-1500)}\n\`\`\`\n\n</details>\n\n`;
+  }
 
   if (result.uncertainties.length > 0) {
     body += `### ⚠️ Areas of Uncertainty\n\n`;
     for (const u of result.uncertainties) {
       body += `- ${u}\n`;
+    }
+    body += `\n`;
+  }
+
+  if (details.heldBack && details.heldBack.length > 0) {
+    body += `### 🔒 Held Back\n\n`;
+    body += `Dispatch did not commit these files because they look like secrets:\n\n`;
+    for (const f of details.heldBack) {
+      body += `- \`${f}\`\n`;
     }
     body += `\n`;
   }
@@ -38,6 +92,21 @@ export function buildPRBody(
 
   if (diffSummary) {
     body += `### Diff Stats\n\n\`\`\`\n${diffSummary}\n\`\`\`\n\n`;
+  }
+
+  if (details.session) {
+    const { id, engine, model, costUsd, turns } = details.session;
+    const usage = [
+      costUsd !== undefined ? `$${costUsd.toFixed(2)}` : null,
+      turns !== undefined ? `${turns} turns` : null,
+    ].filter(Boolean).join(" · ");
+
+    body += `### Session\n\n`;
+    body += `| | |\n|---|---|\n`;
+    body += `| Agent | ${engine} (${model}) |\n`;
+    body += `| Session | \`${id}\` |\n`;
+    if (usage) body += `| Usage | ${usage} |\n`;
+    body += `\nSee how this change was made: \`dispatch explain ${issue.number}\` · Pick it up: \`dispatch resume ${issue.number}\`\n\n`;
   }
 
   body += `---\n`;
@@ -58,9 +127,10 @@ export async function createPRForIssue(
     baseBranch: string;
     diffSummary: string;
     draft: boolean;
+    details?: PRDetails;
   }
 ): Promise<{ number: number; url: string }> {
-  const body = buildPRBody(issue, result, options.diffSummary);
+  const body = buildPRBody(issue, result, options.diffSummary, options.details);
 
   // Build a concise PR title from the commit message:
   // - Use only the first line (subject line) of the commit message
@@ -73,7 +143,8 @@ export async function createPRForIssue(
   const prTitle = `[dispatch] ${truncated}`;
 
   const labels: string[] = ["dispatch"];
-  if (result.confidence < 5) {
+  const lane = options.details?.assessment?.lane;
+  if (lane ? lane !== "ready" : result.confidence < 5) {
     labels.push("needs-review");
   }
   if (issue.classification) {
@@ -85,7 +156,7 @@ export async function createPRForIssue(
     body,
     head: options.branchName,
     base: options.baseBranch,
-    draft: options.draft || result.confidence < 5,
+    draft: options.draft,
     labels,
   });
 

@@ -51,19 +51,26 @@ dispatch run --max-issues 5           # limit to 5 issues
 dispatch run --draft                  # create all PRs as drafts
 dispatch run --model opus             # use a specific model
 dispatch run --base-branch develop    # target a different base branch
+dispatch run --verify-command "make check"   # how to test changes (default: auto-detect)
+dispatch run --max-cost 5             # stop starting new issues after $5 of spend
+dispatch run --provenance ref         # also push session records to refs/dispatch/sessions/*
 ```
 
 **What happens:**
 1. Fetches open issues from your GitHub repo
-2. Classifies each issue (bug fix, feature, investigation, audit, docs, refactor)
-3. Prioritizes by labels (P0 → P1 → P2) and reactions
-4. For each issue:
+2. **Selects** what to work on, and says why it skipped the rest:
+   - skips issues that already have a Dispatch branch, so nightly runs don't redo work
+   - skips issues from people outside the project unless a maintainer adds the `dispatch:ready` label ([Trust & safety](#trust--safety))
+   - skips issues too vague to solve, using a readiness score ([Readiness](#readiness))
+3. Classifies each issue (bug fix, feature, investigation, audit, docs, refactor) and prioritizes by labels (P0 → P1 → P2) and reactions
+4. Builds a short **repo brief** from the base branch (languages, scripts, layout, verify command) that every agent session receives, so agents don't each re-explore the repo
+5. For each issue, in its own git worktree:
    - Creates a branch (`dispatch/issue-42-fix-login-bug`)
-   - Invokes Claude Code to solve it
-   - Self-assesses confidence (1-10)
-   - Commits, pushes, and opens a PR
-5. Low-confidence solutions become draft PRs
-6. Generates a morning summary report
+   - Invokes Claude Code to solve it, recording the session
+   - **Verifies** the change by running your tests; on failure, hands the output back to the agent for a repair
+   - **Scores** the result from evidence (tests run, test changes, diff size), not just the agent's own opinion
+   - Commits with provenance trailers, pushes, and opens a PR in a review lane
+6. Generates a morning review queue: ready to merge, needs eyes, drafts
 
 ### `dispatch create`
 
@@ -82,12 +89,34 @@ dispatch create "add rate limiting to public endpoints" --no-post
 
 ### `dispatch status`
 
-View results from the last run.
+View the last run as a review queue: PRs grouped into **Ready to merge**, **Needs eyes**, and **Drafts**, with confidence, test result, diff size, and cost per PR, followed by failures and skipped issues with reasons.
 
 ```bash
-dispatch status          # pretty-printed morning report
+dispatch status          # morning review queue
 dispatch status --json   # raw JSON output
 ```
+
+### `dispatch explain`
+
+See how a PR was made: the evidence behind its score, what it cost, and a step-by-step timeline of what the agent read, edited, and ran.
+
+```bash
+dispatch explain 42                # by issue number
+dispatch explain '#57'             # by PR number
+dispatch explain 3f9a1c2b          # by session ID (or prefix)
+dispatch explain 42 --transcript   # full agent transcript
+dispatch explain 42 --json         # raw session record
+```
+
+### `dispatch resume`
+
+Pick up where the agent left off. Checks out the PR branch in a separate worktree and reopens the agent's Claude Code session with its full history, so you can steer a low-confidence attempt instead of starting over.
+
+```bash
+dispatch resume 42
+```
+
+Sessions recorded on a CI runner work too: with `provenance: "ref"`, Dispatch fetches them from `refs/dispatch/sessions/*`.
 
 ### `dispatch schedule`
 
@@ -100,7 +129,7 @@ dispatch schedule --time 3am              # run at 3 AM UTC
 dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UTC
 dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
 dispatch schedule --label bug             # only process issues labeled "bug"
-dispatch schedule --auth claude-code      # enterprise: uses Anthropic's GitHub Action (no API key)
+dispatch schedule --auth claude-code      # Claude Pro/Max subscription token instead of an API key
 dispatch schedule --auth github-models    # zero setup: uses GITHUB_TOKEN for AI (no extra secrets)
 dispatch schedule --auth github-models --model anthropic/claude-sonnet-4  # GitHub Models with specific model
 dispatch schedule --auth gemini           # uses GEMINI_API_KEY secret (default: gemini-2.5-pro)
@@ -117,7 +146,7 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 
 **Required setup after running:**
 - **`api-key`** (default): Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
-- **`claude-code`** (enterprise): Just commit and push — OIDC auth is automatic
+- **`claude-code`** (subscription): Run `claude setup-token`, add the token as a `CLAUDE_CODE_OAUTH_TOKEN` secret, then commit and push
 - **`github-models`** (zero setup): Just commit and push — `GITHUB_TOKEN` is auto-provided by GitHub Actions
 - **`gemini`**: Add `GEMINI_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 
@@ -131,7 +160,7 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--draft` | Create PRs as drafts | `false` |
 | `--label <labels...>` | Only process issues with these labels | — |
 | `--model <model>` | Model for `github-models` or `gemini` auth | `openai/gpt-4o` / `gemini-2.5-pro` |
-| `--auth <method>` | Auth method: `api-key` (personal), `claude-code` (enterprise), `github-models` (zero setup), `gemini` (Google AI) | `api-key` |
+| `--auth <method>` | Auth method: `api-key` (Anthropic API key), `claude-code` (Claude subscription token), `github-models` (zero setup), `gemini` (Google AI) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch stats`
@@ -172,7 +201,19 @@ Dispatch reads `.dispatchrc.json` from your repo root:
   "draftThreshold": 5,
   "stateDir": ".dispatch",
   "timeoutPerIssue": 600000,
-  "concurrency": 3
+  "concurrency": 3,
+  "trustedAuthors": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "readyLabel": "dispatch:ready",
+  "minReadiness": 3,
+  "verifyCommand": "",
+  "setupCommand": "",
+  "onVerifyFail": "draft",
+  "repairAttempts": 1,
+  "maxDiffLines": 400,
+  "maxCostPerIssue": 0,
+  "maxCostPerRun": 0,
+  "provenance": "local",
+  "repoBrief": true
 }
 ```
 
@@ -192,6 +233,18 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `stateDir` | Directory for dispatch state/logs | `.dispatch` |
 | `timeoutPerIssue` | Timeout per issue in milliseconds | `600000` (10 min) |
 | `concurrency` | Number of issues to process in parallel | `3` |
+| `trustedAuthors` | GitHub author associations whose issues and comments Dispatch acts on (`"*"` = everyone) | `["OWNER", "MEMBER", "COLLABORATOR"]` |
+| `readyLabel` | Label a maintainer adds to opt any issue in | `dispatch:ready` |
+| `minReadiness` | Minimum readiness score (0-10) to dispatch an issue | `3` |
+| `verifyCommand` | Command that tests a change. Empty = auto-detect (`npm test`, `go test ./...`, `cargo test`, `pytest`, `make test`); `"none"` = skip | `""` |
+| `setupCommand` | Command run in each worktree before solving (e.g. `npm ci`). Empty = link the checkout's `node_modules` | `""` |
+| `onVerifyFail` | When tests still fail after repairs: `"draft"` opens a draft PR, `"skip"` opens none | `"draft"` |
+| `repairAttempts` | Times the agent may fix its change after failing verification | `1` |
+| `maxDiffLines` | Changes larger than this are flagged and opened as drafts | `400` |
+| `maxCostPerIssue` | Spend cap per issue in USD, enforced by Claude Code (`0` = none) | `0` |
+| `maxCostPerRun` | Spend cap per run in USD; no new issues start once reached (`0` = none) | `0` |
+| `provenance` | Session records: `"local"` (`.dispatch/sessions`), `"ref"` (also pushed to `refs/dispatch/sessions/*`), `"off"` | `"local"` |
+| `repoBrief` | Give every agent session a shared brief of the repo (built from the base branch, committed files only, ~4k chars max). Disable per run with `--no-repo-brief` | `true` |
 | `telemetry` | Enable anonymous usage analytics | `true` |
 
 ## Issue Types
@@ -207,23 +260,64 @@ Dispatch automatically classifies issues and adapts its approach:
 | **audit** | Reviews codebase and commits audit report | "Audit for accessibility issues" |
 | **refactor** | Restructures code without behavior changes | "Extract auth logic into service" |
 
-## Confidence Scoring
+## Trust & Safety
 
-After solving each issue, the AI self-assesses its confidence (1-10):
+Dispatch hands issue text to an agent that can edit code and run your tests, so it decides carefully whose text that is:
 
-- **5-10**: Regular PR — review recommended
-- **1-4**: Draft PR with "needs-review" label — significant uncertainty, manual review essential
+- **Trusted authors only.** Issues are dispatched only when the author is an owner, member, or collaborator (`trustedAuthors`). Anyone else's issue is skipped until a maintainer adds the `dispatch:ready` label. Comments from untrusted authors are left out of the prompt.
+- **No GitHub token for the agent.** Claude Code runs with only the credentials it needs (your Anthropic key or subscription token). `GITHUB_TOKEN` and other secrets are removed from its environment, and from the environment your tests run in.
+- **A narrow allowlist.** The agent can read, search, and edit files, and run your verify command. No other shell commands, and no web tools.
+- **Secrets held back.** Files like `.env`, `*.pem`, and `id_rsa` are never committed; the PR lists anything that was held back. Templates such as `.env.example` are committed as normal.
+- **Redacted records.** Session transcripts are scrubbed of token formats and of the values of secret environment variables before they are saved.
+
+## Readiness
+
+Before dispatching an issue, Dispatch scores how well it describes the work (0-10): a descriptive title, a real description, the files or code involved, expected vs. actual behaviour or acceptance criteria, logs, and checklists. Issues below `minReadiness` are skipped, and `dispatch run --dry-run` shows what each one is missing, so you can fix the issue instead of reviewing a guessed PR. The `dispatch:ready` label always counts as ready.
+
+## Verification, Evidence & Review Lanes
+
+A PR's score comes from evidence Dispatch checked itself, not just the agent's opinion of its own work:
+
+1. **Verify.** After solving, Dispatch runs your `verifyCommand` in the worktree. If it fails, the output goes back to the agent, which gets `repairAttempts` tries to fix its change.
+2. **Score.** The agent's self-assessment is adjusted by what actually happened: tests passed (+1) or failed (capped at 3), tests added or changed (+1), untested code changes (−1), diffs over `maxDiffLines` (−2), more than 10 files (−1), three or more open uncertainties (−1).
+3. **Lane.** Each PR lands in one lane of the morning review queue:
+
+| Lane | When | PR |
+|---|---|---|
+| ✅ **Ready to merge** | Confidence ≥ 8, verification passed, no open uncertainties | Regular PR |
+| 👀 **Needs eyes** | Everything in between | Regular PR, `needs-review` label |
+| 📝 **Draft** | Confidence below `draftThreshold`, verification failed, or diff over `maxDiffLines` | Draft PR, `needs-review` label |
+
+Every PR body lists its evidence (✅/⚠️) and links its session.
+
+## Session Provenance
+
+Every issue Dispatch works on gets a session record: which agent and model, cost and turns, readiness, verification and repairs, the evidence behind the score, and the full agent transcript. Each commit carries trailers linking back to it:
+
+```
+fix: handle empty input in parser
+
+Dispatch-Session: 3f9a1c2b-…
+Dispatch-Issue: #42
+Dispatch-Agent: claude/sonnet
+Dispatch-Confidence: 9/10
+Dispatch-Verify: passed (npm test)
+```
+
+Records live in `.dispatch/sessions/<id>/`. With `"provenance": "ref"`, they are also pushed to `refs/dispatch/sessions/<id>` in your repository, outside any branch, so a session recorded on a nightly CI runner can be explained (`dispatch explain`) and resumed (`dispatch resume`) from any clone. Transcripts can include code and file contents, so use `"ref"` on public repositories only if that is acceptable.
 
 ## Authentication Methods
 
-Dispatch supports two ways to authenticate Claude in GitHub Actions:
+Dispatch supports two ways to authenticate Claude Code in GitHub Actions:
 
-| | Personal Account | Enterprise/Team Account |
+| | API key | Claude subscription |
 |---|---|---|
 | **Flag** | `--auth api-key` (default) | `--auth claude-code` |
-| **How** | You create an API key at console.anthropic.com | Anthropic's GitHub Action uses OIDC |
-| **Secrets** | `ANTHROPIC_API_KEY` | None (automatic) |
-| **Setup** | ~2 minutes | Ask your Anthropic admin to enable OIDC |
+| **How** | You create an API key at console.anthropic.com | You generate a token with `claude setup-token` (Pro or Max plan) |
+| **Secrets** | `ANTHROPIC_API_KEY` | `CLAUDE_CODE_OAUTH_TOKEN` |
+| **Setup** | ~2 minutes | ~2 minutes |
+
+**Run your CI on Dispatch's PRs:** PRs opened with the default `GITHUB_TOKEN` don't trigger other workflows, so your CI won't run on them. Add a `DISPATCH_GITHUB_TOKEN` secret (a fine-grained token with contents, pull requests, and issues write access) and the generated workflow uses it instead.
 
 ### `api-key` — Personal accounts (default)
 
@@ -238,26 +332,24 @@ dispatch schedule                    # generates workflow with ANTHROPIC_API_KEY
 2. Add it as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) named `ANTHROPIC_API_KEY`
 3. Commit and push the workflow file
 
-### `claude-code` — Enterprise/team accounts
+### `claude-code` — Claude subscription
 
-Uses Anthropic's official [`claude-code-action`](https://github.com/anthropics/claude-code-action) GitHub Action. Authenticates via **OIDC** (OpenID Connect) — your org's Anthropic plan is used directly. No API key needed.
+Uses your Claude Pro or Max subscription instead of an API key. Claude Code reads a long-lived token from `CLAUDE_CODE_OAUTH_TOKEN`.
 
 ```bash
-dispatch schedule --auth claude-code  # generates workflow using Anthropic's official action
+dispatch schedule --auth claude-code  # generates workflow using CLAUDE_CODE_OAUTH_TOKEN
 ```
 
 **Setup:**
-1. Your Anthropic admin enables OIDC trust between GitHub and your org's Anthropic account
-2. Commit and push the workflow file
-3. That's it — the action handles auth automatically
-
-**Why this exists:** Enterprise Claude Code users authenticate locally via interactive OAuth (browser login). That works great for development, but CI environments can't open a browser. The `claude-code-action` solves this by using GitHub's OIDC token provider to authenticate with Anthropic — same org plan, no separate API key required.
+1. Run `claude setup-token` on your machine and copy the token
+2. Add it as a repository secret named `CLAUDE_CODE_OAUTH_TOKEN`
+3. Commit and push the workflow file
 
 ## Engines
 
 ### Claude Code (default)
 
-Uses [Claude Code](https://claude.com/claude-code) CLI as the AI backend. Requires a separate Anthropic API key or Max subscription.
+Uses the [Claude Code](https://claude.com/claude-code) CLI (v2.1 or later) as the AI backend, with an Anthropic API key or a Claude subscription.
 
 ```json
 {
@@ -265,6 +357,8 @@ Uses [Claude Code](https://claude.com/claude-code) CLI as the AI backend. Requir
   "model": "sonnet"
 }
 ```
+
+Claude Code is the most complete engine: it supports spend caps (`--max-budget-usd`), full session transcripts, repair after failed verification (by resuming the same session), and `dispatch resume`. The trust gate, readiness, verification, and evidence scoring apply to every engine; the GitHub Models and Gemini engines get the rest next.
 
 ### GitHub Models
 
@@ -351,7 +445,7 @@ export DISPATCH_NO_TELEMETRY=1
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) >= 20
-- [Claude Code](https://claude.com/claude-code) installed and authenticated (for `claude` engine)
+- [Claude Code](https://claude.com/claude-code) v2.1+ installed and authenticated (for `claude` engine): `npm install -g @anthropic-ai/claude-code`
 - [Gemini API Key](https://aistudio.google.com/apikey) (for `gemini` engine)
 - [GitHub token](https://github.com/settings/tokens) with repo access (or `gh auth login`)
 
@@ -359,16 +453,21 @@ export DISPATCH_NO_TELEMETRY=1
 
 ```
 dispatch CLI
-├── Commands (run, create, status, stats, init, schedule)
+├── Commands (run, create, status, explain, resume, stats, init, schedule)
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
-│   └── Claude Adapter (claude CLI --print)
+│   └── Claude Adapter (claude CLI --print, stream-json sessions)
 │   └── GitHub Models Adapter (openai SDK + local tool execution)
 │   └── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
-├── Orchestrator (pipeline, classifier, scorer)
-├── Reporter (morning summary, run history)
+├── Orchestrator
+│   ├── selection + readiness (what to work on, and why not)
+│   ├── solve-issue (worktree → agent → verify/repair → PR)
+│   ├── verify (test command detection, sandboxed runs)
+│   └── scorer (evidence-based confidence, review lanes)
+├── Provenance (session records, transcripts, commit trailers, session refs)
+├── Reporter (morning review queue, run history)
 ├── Telemetry (anonymous analytics, local stats)
-└── Utils (config, git, logger)
+└── Utils (config, git, env scrubbing, logger)
 ```
 
 The engine adapter pattern makes adding new AI backends trivial — implement the `AIEngine` interface and you're done.
@@ -377,12 +476,17 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [x] Claude Code engine (default AI backend)
 - [x] Gemini engine adapter
-- [ ] OpenAI adapter
 - [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
-- [ ] Slack/Discord/Teams notifications on run completion
 - [x] GitHub Action for scheduled runs
 - [x] Telemetry and analytics (`dispatch stats`)
+- [x] Parallel issue solving
+- [x] Trust gate, readiness scoring, and idempotent nightly runs
+- [x] Verification gate with agent repair, evidence-based scoring, review lanes
+- [x] Session provenance (`dispatch explain`, `dispatch resume`, commit trailers, session refs)
+- [ ] Gemini and GitHub Models: sandbox hardening, transcripts, cost tracking, repair
+- [ ] Codex engine
+- [ ] Learn from PR outcomes (which issue types and engines actually get merged)
+- [ ] Multi-repo work items (one issue → linked PRs across repositories)
+- [ ] Slack/Discord/Teams notifications on run completion
 - [ ] Issue decomposition (break large issues into sub-tasks)
-- [ ] Learn from PR review feedback
-- [ ] Parallel issue solving
 - [ ] Web dashboard for run history

@@ -2,47 +2,70 @@ import type { Issue } from "../engine/types.js";
 import type { GitHubClient } from "./client.js";
 import { log } from "../utils/logger.js";
 
-/** Fetch and hydrate issues with comments and metadata */
-export async function fetchAndHydrateIssues(
+/** True if Dispatch may act on text written by this GitHub author association ("*" trusts everyone) */
+export function isTrustedAssociation(association: string | undefined, trustedAuthors: string[]): boolean {
+  if (trustedAuthors.includes("*")) return true;
+  return Boolean(association) && trustedAuthors.includes(association!.toUpperCase());
+}
+
+/** How many open issues to look at for a run that solves at most `maxIssues` */
+export function candidateLimit(maxIssues: number): number {
+  return Math.min(300, Math.max(50, maxIssues * 5));
+}
+
+/** Fetch open issues without comments (comments are fetched later, for selected issues only) */
+export async function fetchCandidateIssues(
   client: GitHubClient,
   options: {
     labels?: string[];
     excludeLabels?: string[];
-    maxIssues?: number;
+    limit: number;
   }
 ): Promise<Issue[]> {
   log.info(`Fetching open issues from ${client.owner}/${client.repo}...`);
 
-  const rawIssues = await client.fetchOpenIssues(options);
+  const rawIssues = await client.fetchOpenIssues({
+    labels: options.labels,
+    excludeLabels: options.excludeLabels,
+    maxIssues: options.limit,
+  });
 
   if (rawIssues.length === 0) {
     log.info("No open issues found matching filters.");
     return [];
   }
 
-  log.info(`Found ${rawIssues.length} open issues. Fetching comments...`);
+  log.info(`Found ${rawIssues.length} open issues.`);
 
-  const issues: Issue[] = await Promise.all(
-    rawIssues.map(async (raw) => {
-      const comments = raw.comments > 0
-        ? await client.fetchIssueComments(raw.number)
-        : [];
+  return rawIssues.map((raw) => ({
+    number: raw.number,
+    title: raw.title,
+    body: raw.body || "",
+    labels: raw.labels,
+    comments: [],
+    commentCount: raw.comments,
+    author: raw.user,
+    authorAssociation: raw.author_association,
+    url: raw.html_url,
+    createdAt: raw.created_at,
+    reactions: raw.reactions,
+  }));
+}
 
-      return {
-        number: raw.number,
-        title: raw.title,
-        body: raw.body || "",
-        labels: raw.labels,
-        comments,
-        author: raw.user,
-        url: raw.html_url,
-        createdAt: raw.created_at,
-        reactions: raw.reactions,
-      };
+/** Fetch comments for the given issues, keeping only those from trusted authors */
+export async function hydrateComments(
+  client: GitHubClient,
+  issues: Issue[],
+  trustedAuthors: string[]
+): Promise<void> {
+  await Promise.all(
+    issues.map(async (issue) => {
+      if (!issue.commentCount) return;
+      const comments = await client.fetchIssueComments(issue.number);
+      issue.comments = comments.filter((c) => isTrustedAssociation(c.authorAssociation, trustedAuthors));
+      issue.omittedComments = comments.length - issue.comments.length;
     })
   );
-
-  return issues;
 }
 
 /** Sort issues by priority */

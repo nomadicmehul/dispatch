@@ -1,20 +1,19 @@
 import chalk from "chalk";
 import ora from "ora";
-import type { AIEngine, Issue, SolveResult } from "../engine/types.js";
+import type { AIEngine, Issue } from "../engine/types.js";
 import type { GitHubClient } from "../github/client.js";
 import type { DispatchConfig } from "../utils/config.js";
-import { fetchAndHydrateIssues, prioritizeIssues, slugifyTitle } from "../github/issues.js";
-import { createPRForIssue } from "../github/pulls.js";
-import {
-  commitAndPush,
-  getDiffSummary,
-} from "../utils/git.js";
-import { log, initFileLogging, getLogDir } from "../utils/logger.js";
-import { saveSummary, type RunSummary, type IssueSummary } from "../reporter/summary.js";
+import { candidateLimit, fetchCandidateIssues, hydrateComments } from "../github/issues.js";
+import { listRemoteBranches } from "../utils/git.js";
+import { log, initFileLogging } from "../utils/logger.js";
+import { saveSummary, formatMorningSummary, type RunSummary, type IssueSummary } from "../reporter/summary.js";
 import { heuristicClassify } from "../orchestrator/classifier.js";
-import { adjustConfidence } from "../orchestrator/scorer.js";
+import { selectIssues, parseDispatchedIssueNumbers, type Selection, type SkippedIssue } from "./selection.js";
+import { resolveVerifyCommand } from "./verify.js";
+import { buildRunBrief } from "./repo-brief.js";
+import { solveIssue } from "./solve-issue.js";
 import { Semaphore } from "../utils/semaphore.js";
-import { createWorktree, removeWorktree, getWorktreePath, cleanupAllWorktrees } from "../utils/worktree.js";
+import { cleanupAllWorktrees } from "../utils/worktree.js";
 import { TelemetryCollector } from "../telemetry/collector.js";
 import { getAnonymousId, sendTelemetryEvent } from "../telemetry/remote.js";
 import { updateStats } from "../telemetry/store.js";
@@ -25,6 +24,98 @@ export interface PipelineOptions {
   github: GitHubClient;
   cwd: string;
   dryRun?: boolean;
+}
+
+function emptySummary(startTime: number, issues: IssueSummary[] = []): RunSummary {
+  return {
+    startedAt: new Date(startTime).toISOString(),
+    duration: Date.now() - startTime,
+    issues,
+    totalAttempted: 0,
+    totalSolved: 0,
+    totalFailed: 0,
+    prsCreated: [],
+  };
+}
+
+function skippedSummary(skip: SkippedIssue): IssueSummary {
+  return {
+    number: skip.issue.number,
+    title: skip.issue.title,
+    classification: skip.issue.classification || "unknown",
+    status: "skipped",
+    skipReason: skip.reason,
+    skipDetail: skip.detail,
+  };
+}
+
+/** Issue numbers that already have a Dispatch branch on origin (open PR, closed PR, or interrupted run) */
+async function findDispatchedIssues(branchPrefix: string, cwd: string): Promise<Set<number>> {
+  try {
+    const branches = await listRemoteBranches(`${branchPrefix}issue-*`, cwd);
+    return parseDispatchedIssueNumbers(branches, branchPrefix);
+  } catch (err) {
+    log.warn(`Could not list remote branches, so issues with existing Dispatch PRs may be retried: ${err instanceof Error ? err.message : err}`);
+    return new Set();
+  }
+}
+
+/** Classify issues — heuristic first, AI only for "unknown", with bounded concurrency */
+async function classifyIssues(issues: Issue[], engine: AIEngine, options: { useAI: boolean; concurrency: number }) {
+  const spinner = ora("Classifying issues...").start();
+  for (const issue of issues) {
+    issue.classification = heuristicClassify(issue);
+  }
+
+  const unknowns = issues.filter((i) => i.classification === "unknown");
+  if (options.useAI && unknowns.length > 0) {
+    spinner.text = `Classifying ${unknowns.length} ambiguous issue(s) with AI...`;
+    const semaphore = new Semaphore(options.concurrency);
+    await Promise.all(
+      unknowns.map(async (issue) => {
+        await semaphore.acquire();
+        try {
+          issue.classification = await engine.classifyIssue(issue);
+        } catch (err) {
+          log.warn(`[#${issue.number}] AI classification failed, using "unknown": ${err instanceof Error ? err.message : err}`);
+        } finally {
+          semaphore.release();
+        }
+      })
+    );
+  }
+  spinner.stop();
+}
+
+/** Print what will be dispatched and why the rest was skipped */
+function printPlan(selection: Selection) {
+  if (selection.selected.length > 0) {
+    log.info(`Dispatching ${selection.selected.length} issue(s):\n`);
+    for (const issue of selection.selected) {
+      const readiness = selection.readiness.get(issue.number);
+      log.issue(issue.number, issue.title, "pending");
+      console.log(chalk.gray(
+        `    Type: ${issue.classification} | Readiness: ${readiness?.score ?? "?"}/10 | Priority: ${issue.labels.join(", ") || "none"}`
+      ));
+    }
+    console.log();
+  }
+
+  if (selection.skipped.length > 0) {
+    const byReason = new Map<string, SkippedIssue[]>();
+    for (const skip of selection.skipped) {
+      byReason.set(skip.reason, [...(byReason.get(skip.reason) ?? []), skip]);
+    }
+    log.info(`Skipping ${selection.skipped.length} issue(s):`);
+    for (const [reason, skips] of byReason) {
+      console.log(chalk.gray(`    ${reason} (${skips.length})`));
+      for (const skip of skips.slice(0, 5)) {
+        console.log(chalk.gray(`      #${skip.issue.number} ${skip.issue.title} — ${skip.detail}`));
+      }
+      if (skips.length > 5) console.log(chalk.gray(`      … and ${skips.length - 5} more`));
+    }
+    console.log();
+  }
 }
 
 export async function runPipeline(options: PipelineOptions): Promise<RunSummary> {
@@ -41,271 +132,137 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     log.warn("DRY RUN — no branches, commits, or PRs will be created\n");
   }
 
-  // 1. Fetch and prioritize issues
-  const allIssues = await fetchAndHydrateIssues(github, {
+  // 1. Fetch candidates — more than maxIssues, so filtering doesn't starve the run
+  const candidates = await fetchCandidateIssues(github, {
     labels: config.labels,
     excludeLabels: config.exclude,
-    maxIssues: config.maxIssues,
+    limit: candidateLimit(config.maxIssues),
   });
 
-  telemetry.recordIssuesChecked(allIssues.length);
+  telemetry.recordIssuesChecked(candidates.length);
 
-  if (allIssues.length === 0) {
+  if (candidates.length === 0) {
     log.info("No issues to process. All done! 🎉");
-    return {
-      startedAt: new Date(startTime).toISOString(),
-      duration: Date.now() - startTime,
-      issues: [],
-      totalAttempted: 0,
-      totalSolved: 0,
-      totalFailed: 0,
-      prsCreated: [],
-    };
+    return emptySummary(startTime);
   }
 
-  // 2. Classify issues — heuristic first, AI only for "unknown"
-  {
-    const spinner = ora("Classifying issues...").start();
-    for (const issue of allIssues) {
-      issue.classification = heuristicClassify(issue);
-    }
+  // 2. Select: skip issues already dispatched, from untrusted authors, or too vague to solve
+  const selection = selectIssues(candidates, {
+    trustedAuthors: config.trustedAuthors,
+    readyLabel: config.readyLabel,
+    minReadiness: config.minReadiness,
+    maxIssues: config.maxIssues,
+    dispatched: await findDispatchedIssues(config.branchPrefix, cwd),
+  });
 
-    if (!dryRun) {
-      // Only invoke AI for issues the heuristic couldn't classify
-      const unknowns = allIssues.filter((i) => i.classification === "unknown");
-      if (unknowns.length > 0) {
-        spinner.text = `Classifying ${unknowns.length} ambiguous issue(s) with AI...`;
-        await Promise.all(
-          unknowns.map(async (issue) => {
-            try {
-              issue.classification = await engine.classifyIssue(issue);
-            } catch (err) {
-              log.warn(`[#${issue.number}] AI classification failed, using "unknown": ${err instanceof Error ? err.message : err}`);
-            }
-          })
-        );
-      }
-    }
-    spinner.stop();
-  }
+  // 3. Classify the selected issues
+  await classifyIssues(selection.selected, engine, { useAI: !dryRun, concurrency: config.concurrency });
 
-  // 3. Prioritize
-  const issues = prioritizeIssues(allIssues);
+  printPlan(selection);
 
-  log.info(`Processing ${issues.length} issues:\n`);
-  for (const issue of issues) {
-    log.issue(issue.number, issue.title, "pending");
-    console.log(chalk.gray(`    Type: ${issue.classification} | Priority: ${issue.labels.join(", ") || "none"}`));
-  }
-  console.log();
+  const skipped = selection.skipped.map(skippedSummary);
 
   if (dryRun) {
     log.info("Dry run complete — would process the issues above.");
-    return {
-      startedAt: new Date(startTime).toISOString(),
-      duration: Date.now() - startTime,
-      issues: issues.map((i) => ({
+    return emptySummary(startTime, [
+      ...selection.selected.map((i) => ({
         number: i.number,
         title: i.title,
         classification: i.classification || "unknown",
         status: "skipped" as const,
+        skipReason: "dry-run" as const,
+        readiness: selection.readiness.get(i.number)?.score,
       })),
-      totalAttempted: 0,
-      totalSolved: 0,
-      totalFailed: 0,
-      prsCreated: [],
-    };
+      ...skipped,
+    ]);
   }
 
-  // 4. Process issues in parallel with concurrency control
+  if (selection.selected.length === 0) {
+    log.info("Nothing to dispatch this run.");
+    const summary = emptySummary(startTime, skipped);
+    await saveSummary(summary, cwd, config.stateDir);
+    return summary;
+  }
+
+  // 4. Fetch trusted comments for the selected issues
+  await hydrateComments(github, selection.selected, config.trustedAuthors);
+
+  const verifyCommand = await resolveVerifyCommand(config.verifyCommand, cwd);
+  if (verifyCommand) {
+    log.info(`Verify command: ${chalk.cyan(verifyCommand)}`);
+  } else {
+    log.warn(`No verify command found — PRs won't be tested. Set "verifyCommand" in .dispatchrc.json.`);
+  }
+
+  const brief = config.repoBrief ? await buildRunBrief(cwd, config.baseBranch, verifyCommand) : undefined;
+  if (brief) {
+    log.info(`Repo brief: ${brief.brief.length} chars from ${brief.ref}, shared by every session`);
+  }
+
+  if ((config.maxCostPerRun > 0 || config.maxCostPerIssue > 0) && engine.name !== "claude") {
+    log.warn(`Spend caps need an engine that reports cost; "${engine.name}" doesn't, so caps won't apply.`);
+  }
+
+  // 5. Solve in parallel, within the run's spend cap
   const issueSummaries: IssueSummary[] = [];
   const prsCreated: Array<{ number: number; url: string; issueNumber: number }> = [];
   const semaphore = new Semaphore(config.concurrency);
+  let spent = 0;
 
   // Clean up any leftover worktrees from a previous crashed run
   await cleanupAllWorktrees(cwd, config.stateDir);
 
-  const processIssue = async (issue: Issue) => {
+  await Promise.all(selection.selected.map(async (issue) => {
     await semaphore.acquire();
-
-    const branchName = `${config.branchPrefix}issue-${issue.number}-${slugifyTitle(issue.title)}`;
-    const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number);
-    let issueStatus: "solved" | "failed" | "no-changes" = "failed";
-    const issueStartTime = Date.now();
-
     try {
-      log.info(`[#${issue.number}] ${issue.title} (${issue.classification || "unknown"})`);
-      log.info(`[#${issue.number}] Creating worktree: ${chalk.cyan(branchName)}`);
-      await createWorktree(worktreePath, branchName, config.baseBranch, cwd);
-
-      // Solve the issue
-      const isInvestigation = ["investigation", "audit", "documentation"].includes(
-        issue.classification || ""
-      );
-
-      const solveStart = Date.now();
-      telemetry.startSolve(issue.number);
-      log.info(`[#${issue.number}] Solving...`);
-
-      const progressInterval = setInterval(() => {
-        const secs = Math.round((Date.now() - solveStart) / 1000);
-        log.info(`[#${issue.number}] Still solving... (${secs}s)`);
-      }, 30_000);
-
-      let result: SolveResult;
-      try {
-        const logDir = getLogDir();
-        const issueLogFile = logDir ? `${logDir}/issue-${issue.number}.log` : undefined;
-
-        const context = {
-          owner: github.owner,
-          repo: github.repo,
-          baseBranch: config.baseBranch,
-          cwd: worktreePath,
-          timeout: config.timeoutPerIssue,
-          issueLogFile,
-        };
-
-        if (isInvestigation) {
-          result = await engine.investigate(issue, context);
-        } else {
-          result = await engine.solve(issue, context);
-        }
-
-        const elapsed = Math.round((Date.now() - solveStart) / 1000);
-        log.success(`[#${issue.number}] Solved in ${elapsed}s (confidence: ${result.confidence}/10)`);
-      } catch (solveErr) {
-        log.error(`[#${issue.number}] Solving failed`);
-        throw solveErr;
-      } finally {
-        clearInterval(progressInterval);
-      }
-
-      // Adjust confidence with heuristics
-      result = adjustConfidence(result);
-
-      // Commit and push (operates within the worktree directory)
-      const { hasChanges } = await commitAndPush(branchName, result.commitMessage, worktreePath);
-
-      if (!hasChanges) {
-        log.warn(`[#${issue.number}] No changes produced`);
-        issueStatus = "no-changes";
-
-        telemetry.recordIssue({
-          issueNumber: issue.number,
-          classification: issue.classification || "unknown",
-          confidence: result.confidence,
-          solveTimeMs: Date.now() - solveStart,
-          status: "no-changes",
-          changedFileCount: 0,
-          isInvestigation,
-        });
-
-        issueSummaries.push({
-          number: issue.number,
-          title: issue.title,
-          classification: issue.classification || "unknown",
-          status: "no-changes",
-        });
+      const remaining = config.maxCostPerRun > 0 ? config.maxCostPerRun - spent : undefined;
+      if (remaining !== undefined && remaining <= 0) {
+        issueSummaries.push(skippedSummary({
+          issue,
+          reason: "budget-exhausted",
+          detail: `run spend cap of $${config.maxCostPerRun.toFixed(2)} reached`,
+        }));
         return;
       }
 
-      // Get diff summary (from within the worktree)
-      const diffSummary = await getDiffSummary(config.baseBranch, worktreePath);
+      const caps = [config.maxCostPerIssue > 0 ? config.maxCostPerIssue : undefined, remaining]
+        .filter((n): n is number => n !== undefined);
 
-      // Create PR
-      const shouldDraft = config.createDraftPRs || result.confidence < config.draftThreshold;
-
-      const pr = await createPRForIssue(github, issue, result, {
-        branchName,
-        baseBranch: config.baseBranch,
-        diffSummary,
-        draft: shouldDraft,
+      const outcome = await solveIssue(issue, {
+        config,
+        engine,
+        github,
+        cwd,
+        verifyCommand,
+        repoBrief: brief,
+        readiness: selection.readiness.get(issue.number),
+        maxCostUsd: caps.length > 0 ? Math.min(...caps) : undefined,
       });
 
-      prsCreated.push({ ...pr, issueNumber: issue.number });
-
-      if (config.autoLabel && issue.classification) {
-        await github.addLabel(issue.number, `dispatch:${issue.classification}`);
-      }
-
-      issueStatus = "solved";
-
-      telemetry.recordIssue({
-        issueNumber: issue.number,
-        classification: issue.classification || "unknown",
-        confidence: result.confidence,
-        solveTimeMs: Date.now() - solveStart,
-        status: "solved",
-        changedFileCount: result.changedFiles.length,
-        isInvestigation,
-      });
-
-      issueSummaries.push({
-        number: issue.number,
-        title: issue.title,
-        classification: issue.classification || "unknown",
-        status: "solved",
-        confidence: result.confidence,
-        prNumber: pr.number,
-        prUrl: pr.url,
-        summary: result.summary,
-      });
-
-      log.success(`[#${issue.number}] PR #${pr.number} created (confidence: ${result.confidence}/10)`);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      log.error(`[#${issue.number}] Failed: ${errorMsg}`);
-
-      telemetry.recordIssue({
-        issueNumber: issue.number,
-        classification: issue.classification || "unknown",
-        confidence: null,
-        solveTimeMs: Date.now() - issueStartTime,
-        status: "failed",
-        failureReason: errorMsg,
-        changedFileCount: 0,
-        isInvestigation: ["investigation", "audit", "documentation"].includes(
-          issue.classification || ""
-        ),
-      });
-
-      issueSummaries.push({
-        number: issue.number,
-        title: issue.title,
-        classification: issue.classification || "unknown",
-        status: "failed",
-        error: errorMsg,
-      });
+      spent += outcome.costUsd;
+      telemetry.recordIssue(outcome.telemetry);
+      issueSummaries.push(outcome.summary);
+      if (outcome.pr) prsCreated.push({ ...outcome.pr, issueNumber: issue.number });
     } finally {
-      // Always clean up the worktree
-      try {
-        await removeWorktree(worktreePath, cwd, {
-          deleteBranch: issueStatus !== "solved" ? branchName : undefined,
-        });
-      } catch {
-        log.debug(`[#${issue.number}] Worktree cleanup failed (non-fatal)`);
-      }
-
       semaphore.release();
     }
-  };
+  }));
 
-  await Promise.all(issues.map(processIssue));
-
-  // 5. Generate summary
+  // 6. Generate summary
   const summary: RunSummary = {
     startedAt: new Date(startTime).toISOString(),
     duration: Date.now() - startTime,
-    issues: issueSummaries,
+    issues: [...issueSummaries, ...skipped],
     totalAttempted: issueSummaries.filter((i) => i.status !== "skipped").length,
     totalSolved: issueSummaries.filter((i) => i.status === "solved").length,
     totalFailed: issueSummaries.filter((i) => i.status === "failed").length,
     prsCreated,
+    totalCostUsd: spent > 0 ? spent : undefined,
   };
 
   await saveSummary(summary, cwd, config.stateDir);
-  printSummary(summary);
+  log.header("Run Complete");
+  console.log(formatMorningSummary(summary));
 
   // Telemetry: save local stats and optionally send remote event
   try {
@@ -338,37 +295,4 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   }
 
   return summary;
-}
-
-function printSummary(summary: RunSummary) {
-  log.header("Run Complete");
-
-  const duration = Math.round(summary.duration / 1000 / 60);
-  console.log(chalk.gray(`  Duration: ${duration} minutes`));
-  console.log(
-    `  ${chalk.green(`✓ ${summary.totalSolved} solved`)}  ` +
-    `${chalk.red(`✗ ${summary.totalFailed} failed`)}  ` +
-    `${chalk.gray(`${summary.issues.length} total`)}`
-  );
-  console.log();
-
-  if (summary.prsCreated.length > 0) {
-    console.log(chalk.bold("  Pull Requests:"));
-    for (const pr of summary.prsCreated) {
-      console.log(`    ${chalk.green("→")} PR #${pr.number} (issue #${pr.issueNumber}): ${pr.url}`);
-    }
-    console.log();
-  }
-
-  const failed = summary.issues.filter((i) => i.status === "failed");
-  if (failed.length > 0) {
-    console.log(chalk.bold("  Failed Issues:"));
-    for (const issue of failed) {
-      console.log(`    ${chalk.red("✗")} #${issue.number}: ${issue.title}`);
-      if (issue.error) {
-        console.log(chalk.gray(`      ${issue.error}`));
-      }
-    }
-    console.log();
-  }
 }

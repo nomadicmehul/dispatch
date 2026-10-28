@@ -126,7 +126,8 @@ export function registerInitCommand(program: Command) {
         console.log(chalk.gray(`  3. Run dispatch:  ${chalk.yellow("dispatch run")}`));
         console.log();
         console.log(chalk.dim(`  Want nightly CI runs? Use ${chalk.yellow("dispatch schedule")} to set up GitHub Actions.`));
-        console.log(chalk.dim(`  Enterprise account (no API key)?  ${chalk.yellow("dispatch schedule --auth claude-code")}`));
+        console.log(chalk.dim(`  Claude Pro/Max subscription (no API key)?  ${chalk.yellow("dispatch schedule --auth claude-code")}`));
+        console.log(chalk.dim(`  Preview what would be picked, and why:  ${chalk.yellow("dispatch run --dry-run")}`));
         console.log();
       } catch (err) {
         log.error(`Init failed: ${err instanceof Error ? err.message : err}`);
