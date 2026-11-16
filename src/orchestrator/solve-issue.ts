@@ -34,6 +34,8 @@ import {
 } from "../provenance/store.js";
 import type { IssueSummary } from "../reporter/summary.js";
 import type { IssueTelemetry } from "../telemetry/collector.js";
+import { REPORT_TYPES, type SiblingIssue } from "../engine/base.js";
+import type { BranchChange } from "./overlap.js";
 
 export interface SolveIssueContext {
   config: DispatchConfig;
@@ -47,6 +49,8 @@ export interface SolveIssueContext {
   readiness?: Readiness;
   /** Spend cap for this issue in USD (undefined = no cap) */
   maxCostUsd?: number;
+  /** Other issues solved in the same run */
+  siblings?: SiblingIssue[];
 }
 
 export interface IssueOutcome {
@@ -54,10 +58,9 @@ export interface IssueOutcome {
   telemetry: IssueTelemetry;
   costUsd: number;
   pr?: { number: number; url: string };
+  /** The PR's branch and changed files, for overlap checks across the run */
+  change?: BranchChange;
 }
-
-/** Issue types whose output is a report rather than a code change */
-const REPORT_TYPES = ["investigation", "audit", "documentation"];
 
 /** True if the worktree has changes other than the given linked paths */
 async function hasChanges(worktreePath: string, ignore: string[]): Promise<boolean> {
@@ -152,7 +155,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
   const branchName = `${config.branchPrefix}issue-${issue.number}-${slugifyTitle(issue.title)}`;
   const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number);
   const classification = issue.classification || "unknown";
-  const isInvestigation = REPORT_TYPES.includes(classification);
+  const isInvestigation = REPORT_TYPES.includes(issue.classification ?? "unknown");
   const keepRecords = config.provenance !== "off";
   const startTime = Date.now();
 
@@ -215,6 +218,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
       maxCostUsd: ctx.maxCostUsd,
       allowedCommands: ctx.verifyCommand ? [ctx.verifyCommand] : [],
       repoBrief: ctx.repoBrief?.brief,
+      siblings: ctx.siblings,
     };
 
     await appendTranscriptEvent(transcriptFile, "solve", { engine: engine.name, model: config.model, issue: issue.number });
@@ -361,5 +365,9 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
     isInvestigation,
   };
 
-  return { summary, telemetry, costUsd, pr };
+  const change = pr && diff
+    ? { issueNumber: issue.number, prNumber: pr.number, branch: branchName, files: diff.files }
+    : undefined;
+
+  return { summary, telemetry, costUsd, pr, change };
 }

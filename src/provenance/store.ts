@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile, access, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { git, writeFilesToRef, type DiffStats } from "../utils/git.js";
+import { git, gitRemote, writeFilesToRef, type DiffStats } from "../utils/git.js";
 import { log } from "../utils/logger.js";
 import { redactSecrets } from "./redact.js";
 import type { Assessment } from "../orchestrator/scorer.js";
@@ -149,7 +149,7 @@ export async function pushSessionRef(record: SessionRecord, cwd: string, stateDi
   const ref = `${REF_PREFIX}${record.id}`;
   try {
     await writeFilesToRef(ref, files, `dispatch session ${record.id} (issue #${record.issueNumber})`, cwd, indexFile);
-    await git(["push", "origin", `${ref}:${ref}`], cwd);
+    await gitRemote(["push", "origin", `${ref}:${ref}`], cwd);
   } finally {
     await rm(indexFile, { force: true });
   }
@@ -160,7 +160,7 @@ export async function pushSessionRef(record: SessionRecord, cwd: string, stateDi
  * Returns how many sessions were added.
  */
 export async function fetchSessionRefs(cwd: string, stateDir: string): Promise<number> {
-  await git(["fetch", "origin", `+${REF_PREFIX}*:${REF_PREFIX}*`], cwd);
+  await gitRemote(["fetch", "origin", `+${REF_PREFIX}*:${REF_PREFIX}*`], cwd);
   const { stdout } = await git(["for-each-ref", "--format=%(refname)", REF_PREFIX], cwd);
 
   let added = 0;

@@ -68,6 +68,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Keep the token out of .git/config, where the agent could read it.
+          # Dispatch passes it to git only for its own fetch and push commands.
+          persist-credentials: false
           token: \${{ secrets.DISPATCH_GITHUB_TOKEN || github.token }}
 
       - name: Setup Node.js
@@ -146,6 +149,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Keep the token out of .git/config, where the agent could read it.
+          # Dispatch passes it to git only for its own fetch and push commands.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -217,6 +223,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Keep the token out of .git/config, where the agent could read it.
+          # Dispatch passes it to git only for its own fetch and push commands.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -402,13 +411,16 @@ export function registerScheduleCommand(program: Command) {
           process.exit(1);
         }
 
-        log.header("Dispatch Schedule Setup");
-        log.info(`Repository: ${chalk.bold(`${owner}/${repo}`)}`);
+        // With --stdout, stdout carries only the workflow so it can be redirected to a file
+        if (!options.stdout) {
+          log.header("Dispatch Schedule Setup");
+          log.info(`Repository: ${chalk.bold(`${owner}/${repo}`)}`);
+        }
 
-        let cronSchedule = options.cron || parseCronTime(options.time);
+        const cronSchedule = options.cron || parseCronTime(options.time);
         if (!cronSchedule) {
-          log.warn(`Unrecognized time format "${options.time}", defaulting to 2 AM UTC.`);
-          cronSchedule = "0 2 * * *";
+          log.error(`Unrecognized time "${options.time}". Use e.g. 2am, 14:30, midnight, noon, or --cron.`);
+          process.exit(1);
         }
         const maxIssues = options.maxIssues || 10;
         const draft = options.draft || false;

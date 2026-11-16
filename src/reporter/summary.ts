@@ -25,6 +25,8 @@ export interface IssueSummary {
   diff?: { files: number; additions: number; deletions: number };
   skipReason?: SkipReason | "dry-run";
   skipDetail?: string;
+  /** Other PRs from the same run that change the same files */
+  overlaps?: string[];
 }
 
 export interface RunSummary {
@@ -133,6 +135,7 @@ export function formatMorningSummary(summary: RunSummary): string {
       if (evidence) lines.push(`     ${evidence}`);
       if (issue.prUrl) lines.push(`     ${issue.prUrl}`);
       if (issue.summary) lines.push(`   └─ ${issue.summary}`);
+      for (const overlap of issue.overlaps ?? []) lines.push(`   ⚠ Overlaps: ${overlap.replace(/\*\*/g, "")}`);
     }
     lines.push(``);
   }

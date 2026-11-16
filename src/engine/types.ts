@@ -56,6 +56,8 @@ export interface RepoContext {
   allowedCommands?: string[];
   /** Repository brief shared by every session in the run (see orchestrator/repo-brief.ts) */
   repoBrief?: string;
+  /** Other issues solved in the same run, on their own branches */
+  siblings?: Array<{ number: number; title: string; classification?: string }>;
 }
 
 /** Engine session metadata captured during a solve */

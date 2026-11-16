@@ -5,6 +5,7 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../utils/config.js";
 import { log } from "../utils/logger.js";
+import { claudeEnv } from "../engine/claude.js";
 import { createWorktree, createWorktreeFromBranch } from "../utils/worktree.js";
 import { findSession, sessionDir, NATIVE_TRANSCRIPT_FILE, type SessionRecord } from "../provenance/store.js";
 
@@ -67,8 +68,8 @@ export function registerResumeCommand(program: Command) {
           ? `Resuming Claude Code session ${record.id.substring(0, 8)} with its full history...`
           : "No Claude Code transcript for this session — starting a new session with a handoff summary...");
 
-        const env = { ...process.env };
-        delete env.CLAUDECODE; // Allow nested claude calls
+        // Same environment as an agent run: GITHUB_TOKEN and other credentials stay out
+        const env = claudeEnv();
 
         const code = await new Promise<number | null>((resolve, reject) => {
           const child = spawn("claude", args, { cwd: worktreePath, stdio: "inherit", env });

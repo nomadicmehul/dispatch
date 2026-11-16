@@ -39,8 +39,14 @@ registerStatsCommand(program);
 registerExplainCommand(program);
 registerResumeCommand(program);
 
-// Default action (no subcommand)
+// Default action (no subcommand). Excess arguments are allowed so that an unknown
+// command gets a clear message instead of "too many arguments".
+program.allowExcessArguments(true);
 program.action(() => {
+  if (program.args.length > 0) {
+    console.error(chalk.red(`✗ Unknown command "${program.args[0]}".`) + chalk.gray(" Run dispatch --help to see the commands."));
+    process.exit(1);
+  }
   console.log();
   console.log(
     chalk.bold.cyan("  ⚡ dispatch") +
