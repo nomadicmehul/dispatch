@@ -4,6 +4,7 @@ import { writeFile, mkdir, access } from "node:fs/promises";
 import { join } from "node:path";
 import { getRepoInfo } from "../utils/git.js";
 import { log } from "../utils/logger.js";
+import { GITHUB_MODELS_RETIRED } from "../engine/github-models.js";
 
 export type AuthMethod = "api-key" | "claude-code" | "github-models" | "gemini";
 
@@ -101,7 +102,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-logs-\${{ github.run_id }}
-          path: .dispatch/
+          # .dispatch is a hidden folder, which upload-artifact v4 skips unless told otherwise
+          include-hidden-files: true
+          path: |
+            .dispatch/
+            !.dispatch/worktrees/
           retention-days: 30
 `;
 
@@ -176,7 +181,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-logs-\${{ github.run_id }}
-          path: .dispatch/
+          # .dispatch is a hidden folder, which upload-artifact v4 skips unless told otherwise
+          include-hidden-files: true
+          path: |
+            .dispatch/
+            !.dispatch/worktrees/
           retention-days: 30
 `;
 
@@ -251,7 +260,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-logs-\${{ github.run_id }}
-          path: .dispatch/
+          # .dispatch is a hidden folder, which upload-artifact v4 skips unless told otherwise
+          include-hidden-files: true
+          path: |
+            .dispatch/
+            !.dispatch/worktrees/
           retention-days: 30
 `;
 
@@ -394,8 +407,8 @@ export function registerScheduleCommand(program: Command) {
     .option("--draft", "Create PRs as drafts")
     .option("--label <labels...>", "Only process issues with these labels")
     .option("--cron <expression>", "Custom cron expression (overrides --time)")
-    .option("--model <model>", "Model for github-models or gemini engine")
-    .option("--auth <method>", "Auth method: api-key, claude-code (subscription token), github-models, or gemini", "api-key")
+    .option("--model <model>", "Model for the gemini engine")
+    .option("--auth <method>", "Auth method: api-key, claude-code (subscription token), or gemini", "api-key")
     .option("--stdout", "Print workflow to stdout instead of writing file")
     .action(async (options) => {
       try {
@@ -427,8 +440,12 @@ export function registerScheduleCommand(program: Command) {
         const labels = options.label || [];
 
         const auth = (options.auth || "api-key") as AuthMethod;
-        if (!["api-key", "claude-code", "github-models", "gemini"].includes(auth)) {
-          log.error(`Unknown auth method: "${auth}". Use "api-key", "claude-code", "github-models", or "gemini".`);
+        if (auth === "github-models") {
+          log.error(GITHUB_MODELS_RETIRED);
+          process.exit(1);
+        }
+        if (!["api-key", "claude-code", "gemini"].includes(auth)) {
+          log.error(`Unknown auth method: "${auth}". Use "api-key", "claude-code", or "gemini".`);
           process.exit(1);
         }
 

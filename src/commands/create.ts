@@ -5,7 +5,7 @@ import { loadConfig } from "../utils/config.js";
 import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
-import { GitHubModelsEngine } from "../engine/github-models.js";
+import { GITHUB_MODELS_RETIRED } from "../engine/github-models.js";
 import { GeminiEngine } from "../engine/gemini.js";
 import type { AIEngine } from "../engine/types.js";
 import { log } from "../utils/logger.js";
@@ -52,10 +52,8 @@ export function registerCreateCommand(program: Command) {
             maxTurns: 3,
           });
         } else if (engineName === "github-models") {
-          engine = new GitHubModelsEngine({
-            model: modelName,
-            maxTurns: 3,
-          });
+          log.error(GITHUB_MODELS_RETIRED);
+          process.exit(1);
         } else {
           engine = new ClaudeEngine({
             model: modelName,

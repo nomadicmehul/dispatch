@@ -130,8 +130,6 @@ dispatch schedule --cron "0 6 * * 1"      # custom cron: every Monday at 6 AM UT
 dispatch schedule --max-issues 5 --draft  # limit issues and create draft PRs
 dispatch schedule --label bug             # only process issues labeled "bug"
 dispatch schedule --auth claude-code      # Claude Pro/Max subscription token instead of an API key
-dispatch schedule --auth github-models    # zero setup: uses GITHUB_TOKEN for AI (no extra secrets)
-dispatch schedule --auth github-models --model anthropic/claude-sonnet-4  # GitHub Models with specific model
 dispatch schedule --auth gemini           # uses GEMINI_API_KEY secret (default: gemini-2.5-pro)
 dispatch schedule --auth gemini --model gemini-3-pro-preview  # Gemini 3 series model
 dispatch schedule --stdout                # print workflow YAML without writing file
@@ -142,15 +140,15 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 2. The workflow installs Dispatch (and Claude Code CLI if using `api-key` auth) on a GitHub Actions runner
 3. Runs `dispatch run` on your configured schedule
 4. Supports manual triggering from the GitHub Actions UI (`workflow_dispatch`)
-5. Uploads `.dispatch/` logs as artifacts (retained 30 days)
+5. Uploads `.dispatch/` logs and session records as artifacts (retained 30 days)
+6. Checks out with `persist-credentials: false`, so the token is never written to `.git/config` where the agent could read it. Dispatch hands it to git only for its own fetch and push. If you generated your workflow with an earlier version, run `dispatch schedule` again to pick this up
 
 **Required setup after running:**
 - **`api-key`** (default): Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 - **`claude-code`** (subscription): Run `claude setup-token`, add the token as a `CLAUDE_CODE_OAUTH_TOKEN` secret, then commit and push
-- **`github-models`** (zero setup): Just commit and push — `GITHUB_TOKEN` is auto-provided by GitHub Actions
 - **`gemini`**: Add `GEMINI_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 
-> **Easiest option**: `dispatch schedule --auth github-models` requires zero secrets — just commit the workflow file and it works. Uses GPT-4o by default, or pass `--model` to choose another model.
+> **GitHub Models is gone.** GitHub [retired GitHub Models on 2026-07-30](https://github.blog/changelog/2026-07-30-github-models-is-now-retired/), so `--auth github-models` (the old "zero setup" option) no longer works. Workflows that use it should switch to `api-key`, `claude-code`, or `gemini`.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -159,8 +157,8 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 | `--max-issues <n>` | Max issues per run | `10` |
 | `--draft` | Create PRs as drafts | `false` |
 | `--label <labels...>` | Only process issues with these labels | — |
-| `--model <model>` | Model for `github-models` or `gemini` auth | `openai/gpt-4o` / `gemini-2.5-pro` |
-| `--auth <method>` | Auth method: `api-key` (Anthropic API key), `claude-code` (Claude subscription token), `github-models` (zero setup), `gemini` (Google AI) | `api-key` |
+| `--model <model>` | Model for `gemini` auth | `gemini-2.5-pro` |
+| `--auth <method>` | Auth method: `api-key` (Anthropic API key), `claude-code` (Claude subscription token), `gemini` (Google AI) | `api-key` |
 | `--stdout` | Print YAML to stdout instead of writing file | `false` |
 
 ### `dispatch stats`
@@ -219,8 +217,8 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `engine` | AI backend (`claude`, `github-models`, `gemini`) | `claude` |
-| `model` | Model name (`sonnet`/`opus`/`haiku` for Claude; `openai/gpt-4o` etc. for GitHub Models; `gemini-2.5-pro` etc. for Gemini) | `sonnet` |
+| `engine` | AI backend (`claude`, `gemini`) | `claude` |
+| `model` | Model name (`sonnet`/`opus`/`haiku` for Claude; `gemini-2.5-pro` etc. for Gemini) | `sonnet` |
 | `labels` | Only process issues with these labels (empty = all) | `[]` |
 | `exclude` | Skip issues with these labels | `["wontfix", "blocked", "duplicate"]` |
 | `maxIssues` | Max issues per run | `10` |
@@ -358,33 +356,11 @@ Uses the [Claude Code](https://claude.com/claude-code) CLI (v2.1 or later) as th
 }
 ```
 
-Claude Code is the most complete engine: it supports spend caps (`--max-budget-usd`), full session transcripts, repair after failed verification (by resuming the same session), and `dispatch resume`. The trust gate, readiness, verification, and evidence scoring apply to every engine; the GitHub Models and Gemini engines get the rest next.
+Claude Code is the most complete engine: it supports spend caps (`--max-budget-usd`), full session transcripts, repair after failed verification (by resuming the same session), and `dispatch resume`. The trust gate, readiness, verification, and evidence scoring apply to every engine; the Gemini engine gets the rest next.
 
-### GitHub Models
+### GitHub Models (retired)
 
-Uses the [GitHub Models](https://github.com/marketplace/models) inference API — access GPT-4o, Claude Sonnet, Gemini, Llama, and more through your existing `GITHUB_TOKEN`. No additional API keys needed.
-
-```json
-{
-  "engine": "github-models",
-  "model": "openai/gpt-4o"
-}
-```
-
-**Available models include:**
-- `openai/gpt-4o` — GPT-4o (recommended for best tool-calling support)
-- `anthropic/claude-sonnet-4` — Claude Sonnet 4
-- `google/gemini-2.5-pro` — Gemini 2.5 Pro
-- `meta/llama-4-scout` — Llama 4 Scout
-
-**Setup:**
-1. Your `GITHUB_TOKEN` needs `models:read` scope (for fine-grained PATs) or classic tokens work by default
-2. Set `engine` to `"github-models"` in `.dispatchrc.json` (or `dispatch init`)
-3. That's it — `dispatch run` will use the GitHub Models API
-
-**Free tier:** GitHub Models includes a free tier (rate-limited). See [GitHub Models pricing](https://docs.github.com/en/github-models) for details.
-
-**How it works:** Unlike Claude Code (which delegates to the `claude` CLI), the GitHub Models engine runs its own agentic loop: it calls the model API, executes tool calls (file read/write, grep, bash) locally in the worktree, and repeats until the issue is solved.
+GitHub [retired GitHub Models on 2026-07-30](https://github.blog/changelog/2026-07-30-github-models-is-now-retired/); its inference API no longer answers. If your `.dispatchrc.json` still says `"engine": "github-models"`, Dispatch exits with an explanation. Switch to `"claude"` or `"gemini"`.
 
 ### Gemini
 
@@ -410,7 +386,7 @@ Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible end
 3. Set `engine` to `"gemini"` in `.dispatchrc.json` (or `dispatch init`)
 4. Run `dispatch run`
 
-**How it works:** Like the GitHub Models engine, the Gemini engine runs its own agentic loop: it calls the Gemini API (via Google's OpenAI-compatible endpoint), executes tool calls locally in the worktree, and repeats until the issue is solved. No additional CLI tools need to be installed.
+**How it works:** Unlike Claude Code (which delegates to the `claude` CLI), the Gemini engine runs its own agentic loop: it calls the Gemini API (via Google's OpenAI-compatible endpoint), executes tool calls locally in the worktree, and repeats until the issue is solved. No additional CLI tools need to be installed.
 
 ## Telemetry
 
@@ -457,7 +433,6 @@ dispatch CLI
 ├── GitHub Client (octokit — issues, PRs, labels)
 ├── Engine Layer (pluggable AI adapters)
 │   └── Claude Adapter (claude CLI --print, stream-json sessions)
-│   └── GitHub Models Adapter (openai SDK + local tool execution)
 │   └── Gemini Adapter (openai SDK + Google's OpenAI-compatible endpoint)
 ├── Orchestrator
 │   ├── selection + readiness (what to work on, and why not)
@@ -476,14 +451,14 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 
 - [x] Claude Code engine (default AI backend)
 - [x] Gemini engine adapter
-- [x] GitHub Models engine (use Claude/GPT-4o via GITHUB_TOKEN — zero setup)
+- [x] ~~GitHub Models engine~~ (GitHub retired GitHub Models on 2026-07-30; the engine now exits with an explanation)
 - [x] GitHub Action for scheduled runs
 - [x] Telemetry and analytics (`dispatch stats`)
 - [x] Parallel issue solving
 - [x] Trust gate, readiness scoring, and idempotent nightly runs
 - [x] Verification gate with agent repair, evidence-based scoring, review lanes
 - [x] Session provenance (`dispatch explain`, `dispatch resume`, commit trailers, session refs)
-- [ ] Gemini and GitHub Models: sandbox hardening, transcripts, cost tracking, repair
+- [ ] Gemini: sandbox hardening, transcripts, cost tracking, repair
 - [ ] Codex engine
 - [ ] Learn from PR outcomes (which issue types and engines actually get merged)
 - [ ] Multi-repo work items (one issue → linked PRs across repositories)
