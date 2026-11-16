@@ -70,6 +70,11 @@ describe("prepareIssueSandbox", () => {
     assert.ok(agent.filesystem.allowWrite.includes(worktree));
     assert.ok(!agent.filesystem.allowWrite.includes(home));
     assert.ok(!agent.filesystem.allowWrite.includes(repo));
+    // Claude Code's Bash tool writes its temp files under /tmp/claude-<uid>, not $TMPDIR
+    if (process.getuid) {
+      assert.ok(agent.filesystem.allowWrite.some((p: string) => p.endsWith(`/claude-${process.getuid!()}`)));
+      assert.ok(!agent.filesystem.allowWrite.some((p: string) => p === "/tmp" || p === "/private/tmp"));
+    }
     // Network: the agent reaches Claude; verify and setup commands don't
     for (const host of [...AGENT_DOMAINS, ...REGISTRY_DOMAINS, "npm.example.com"]) {
       assert.ok(agent.network.allowedDomains.includes(host), host);

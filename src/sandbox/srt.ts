@@ -131,6 +131,23 @@ export async function sandboxPreflight(
   return null;
 }
 
+/**
+ * Claude Code's Bash tool keeps its temp files in /tmp/claude-<uid>/, not in $TMPDIR, so
+ * the agent's own test runs fail with EPERM unless that folder is writable. Only this
+ * folder is opened, not all of /tmp. It is created first: bubblewrap binds existing paths.
+ */
+async function claudeTempDir(): Promise<string | undefined> {
+  if (platform() === "win32" || typeof process.getuid !== "function") return undefined;
+  const root = await realpath("/tmp").catch(() => "/tmp");
+  const dir = join(root, `claude-${process.getuid()}`);
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    return dir;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Toolchain folders that exist under home */
 async function toolchainDirs(home: string): Promise<string[]> {
   const dirs: string[] = [];
@@ -162,6 +179,7 @@ export async function prepareIssueSandbox(params: {
   await mkdir(configDir, { recursive: true });
 
   const tmp = await realpath(tmpdir()).catch(() => tmpdir());
+  const claudeTmp = await claudeTempDir();
   const claudeBin = await resolveExecutable("claude");
   const toolchains = await toolchainDirs(home);
   const extraRead = options.extraRead ?? [];
@@ -180,7 +198,7 @@ export async function prepareIssueSandbox(params: {
   const agentPolicy = {
     allowedDomains: [...AGENT_DOMAINS, ...REGISTRY_DOMAINS, ...domains],
     allowRead: [...commonRead, configDir],
-    allowWrite: [worktreePath, configDir, tmp, ...extraWrite],
+    allowWrite: [worktreePath, configDir, tmp, ...(claudeTmp ? [claudeTmp] : []), ...extraWrite],
   };
   const verifyPolicy = {
     allowedDomains: [...REGISTRY_DOMAINS, ...domains],
