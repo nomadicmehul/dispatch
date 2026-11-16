@@ -132,40 +132,46 @@ function applyEnvOverrides(config: DispatchConfig): void {
   if (process.env.POSTHOG_HOST) config.posthogHost = process.env.POSTHOG_HOST;
 }
 
+/** Thrown for CLI values that must not fall back to a default, such as spend caps */
+export class ConfigError extends Error {}
+
 export function applyCliOverrides(config: DispatchConfig, options: Record<string, unknown>): DispatchConfig {
   const merged = { ...config };
 
+  /** A whole number >= 1, or a warning and the configured value */
+  const positiveInt = (flag: string, value: unknown, fallback: number): number => {
+    const val = Number(value);
+    if (!Number.isFinite(val) || val < 1) {
+      log.warn(`Invalid ${flag} "${value}", using ${fallback}. It must be a whole number of 1 or more.`);
+      return fallback;
+    }
+    return Math.floor(val);
+  };
+
+  /**
+   * A spend cap in USD. An invalid cap is an error, not a warning: falling back
+   * to the default would mean running with no cap at all.
+   */
+  const spendCap = (flag: string, value: unknown): number => {
+    const val = Number(value);
+    if (!Number.isFinite(val) || val < 0) {
+      throw new ConfigError(`Invalid ${flag} "${value}". Give an amount in USD, e.g. ${flag} 5 (0 = no cap).`);
+    }
+    return val;
+  };
+
   if (options.engine) merged.engine = String(options.engine);
   if (options.model) merged.model = String(options.model);
-  if (options.maxIssues) {
-    const val = Number(options.maxIssues);
-    if (!Number.isFinite(val) || val < 1) {
-      log.warn(`Invalid --max-issues "${options.maxIssues}", using default (${config.maxIssues}).`);
-    } else {
-      merged.maxIssues = Math.floor(val);
-    }
-  }
-  if (options.maxTurns) {
-    const val = Number(options.maxTurns);
-    if (!Number.isFinite(val) || val < 1) {
-      log.warn(`Invalid --max-turns "${options.maxTurns}", using default (${config.maxTurnsPerIssue}).`);
-    } else {
-      merged.maxTurnsPerIssue = Math.floor(val);
-    }
-  }
+  // Commander's parseInt turns "abc" into NaN and keeps "0" as 0, so check for presence, not truthiness
+  if (options.maxIssues !== undefined) merged.maxIssues = positiveInt("--max-issues", options.maxIssues, config.maxIssues);
+  if (options.maxTurns !== undefined) merged.maxTurnsPerIssue = positiveInt("--max-turns", options.maxTurns, config.maxTurnsPerIssue);
+  if (options.concurrency !== undefined) merged.concurrency = positiveInt("--concurrency", options.concurrency, config.concurrency);
   if (options.label) merged.labels = Array.isArray(options.label) ? options.label : [String(options.label)];
   if (options.exclude) merged.exclude = Array.isArray(options.exclude) ? options.exclude : [String(options.exclude)];
   if (options.draft !== undefined) merged.createDraftPRs = Boolean(options.draft);
   if (options.baseBranch) merged.baseBranch = String(options.baseBranch);
-  if (options.noTelemetry) merged.telemetry = false;
-  if (options.concurrency) {
-    const val = Number(options.concurrency);
-    if (!Number.isFinite(val) || val < 1) {
-      log.warn(`Invalid --concurrency "${options.concurrency}", using default (${config.concurrency}).`);
-    } else {
-      merged.concurrency = Math.floor(val);
-    }
-  }
+  // Commander turns --no-telemetry into { telemetry: false } (it defaults to true when absent)
+  if (options.telemetry === false) merged.telemetry = false;
   if (options.verifyCommand !== undefined) merged.verifyCommand = String(options.verifyCommand);
   if (options.minReadiness !== undefined) {
     const val = Number(options.minReadiness);
@@ -175,22 +181,8 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
       merged.minReadiness = val;
     }
   }
-  if (options.maxCost !== undefined) {
-    const val = Number(options.maxCost);
-    if (!Number.isFinite(val) || val < 0) {
-      log.warn(`Invalid --max-cost "${options.maxCost}", using default (${config.maxCostPerRun}).`);
-    } else {
-      merged.maxCostPerRun = val;
-    }
-  }
-  if (options.maxCostPerIssue !== undefined) {
-    const val = Number(options.maxCostPerIssue);
-    if (!Number.isFinite(val) || val < 0) {
-      log.warn(`Invalid --max-cost-per-issue "${options.maxCostPerIssue}", using default (${config.maxCostPerIssue}).`);
-    } else {
-      merged.maxCostPerIssue = val;
-    }
-  }
+  if (options.maxCost !== undefined) merged.maxCostPerRun = spendCap("--max-cost", options.maxCost);
+  if (options.maxCostPerIssue !== undefined) merged.maxCostPerIssue = spendCap("--max-cost-per-issue", options.maxCostPerIssue);
   // Commander defaults --no-repo-brief to true, so only an explicit false overrides the config file
   if (options.repoBrief === false) merged.repoBrief = false;
   if (options.provenance !== undefined) {

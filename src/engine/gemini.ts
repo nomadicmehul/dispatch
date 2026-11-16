@@ -11,6 +11,10 @@ import type {
 import {
   buildIssuePrompt,
   SYSTEM_PROMPTS,
+  SECURITY_PROMPT,
+  PRECEDENCE_PROMPT,
+  siblingPrompt,
+  reportClassification,
   CONFIDENCE_PROMPT,
   CLASSIFICATION_PROMPT,
   ISSUE_CREATION_PROMPT,
@@ -119,7 +123,9 @@ export class GeminiEngine implements AIEngine {
 
   async solve(issue: Issue, context: RepoContext): Promise<SolveResult> {
     const classification = issue.classification || "code-fix";
-    const systemPrompt = SYSTEM_PROMPTS[classification];
+    const systemPrompt = [PRECEDENCE_PROMPT, SECURITY_PROMPT, SYSTEM_PROMPTS[classification], siblingPrompt(context.siblings)]
+      .filter(Boolean)
+      .join("\n\n");
     const issuePrompt = buildIssuePrompt(issue);
 
     log.info(`Solving #${issue.number} as "${classification}" with Gemini (${this.model})...`);
@@ -165,7 +171,7 @@ ${CONFIDENCE_PROMPT}`;
   }
 
   async investigate(issue: Issue, context: RepoContext): Promise<SolveResult> {
-    const investigationIssue: Issue = { ...issue, classification: "investigation" as IssueClassification };
+    const investigationIssue: Issue = { ...issue, classification: reportClassification(issue.classification) };
     return this.solve(investigationIssue, context);
   }
 

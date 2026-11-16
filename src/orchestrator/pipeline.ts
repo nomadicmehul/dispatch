@@ -12,6 +12,7 @@ import { selectIssues, parseDispatchedIssueNumbers, type Selection, type Skipped
 import { resolveVerifyCommand } from "./verify.js";
 import { buildRunBrief } from "./repo-brief.js";
 import { solveIssue } from "./solve-issue.js";
+import { detectOverlaps, describeOverlap, overlapComment, type BranchChange } from "./overlap.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { cleanupAllWorktrees } from "../utils/worktree.js";
 import { TelemetryCollector } from "../telemetry/collector.js";
@@ -118,6 +119,43 @@ function printPlan(selection: Selection) {
   }
 }
 
+/** Check PRs from this run for shared files and merge conflicts; comment on each affected PR */
+async function flagOverlaps(
+  changes: BranchChange[],
+  issueSummaries: IssueSummary[],
+  github: GitHubClient,
+  cwd: string,
+): Promise<void> {
+  try {
+    const overlaps = await detectOverlaps(changes, cwd);
+    if (overlaps.length === 0) return;
+
+    const conflicting = overlaps.filter((o) => o.conflicts === true).length;
+    log.warn(
+      `${overlaps.length} pair(s) of PRs from this run change the same files` +
+      (conflicting > 0 ? `; ${conflicting} conflict when merged together` : "; all merge cleanly")
+    );
+
+    for (const change of changes) {
+      const comment = overlapComment(overlaps, change.prNumber);
+      if (!comment) continue;
+      const summary = issueSummaries.find((s) => s.prNumber === change.prNumber);
+      if (summary) {
+        summary.overlaps = overlaps
+          .filter((o) => o.a.prNumber === change.prNumber || o.b.prNumber === change.prNumber)
+          .map((o) => describeOverlap(o, change.prNumber));
+      }
+      try {
+        await github.addComment(change.prNumber, comment);
+      } catch (err) {
+        log.warn(`Could not comment on PR #${change.prNumber}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  } catch (err) {
+    log.warn(`Overlap check failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 export async function runPipeline(options: PipelineOptions): Promise<RunSummary> {
   const { config, engine, github, cwd, dryRun = false } = options;
   const startTime = Date.now();
@@ -133,9 +171,9 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   }
 
   // 1. Fetch candidates — more than maxIssues, so filtering doesn't starve the run
+  // Excluded labels are applied in selection, so the report can list what they filtered out
   const candidates = await fetchCandidateIssues(github, {
     labels: config.labels,
-    excludeLabels: config.exclude,
     limit: candidateLimit(config.maxIssues),
   });
 
@@ -149,6 +187,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   // 2. Select: skip issues already dispatched, from untrusted authors, or too vague to solve
   const selection = selectIssues(candidates, {
     trustedAuthors: config.trustedAuthors,
+    excludeLabels: config.exclude,
     readyLabel: config.readyLabel,
     minReadiness: config.minReadiness,
     maxIssues: config.maxIssues,
@@ -206,6 +245,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   // 5. Solve in parallel, within the run's spend cap
   const issueSummaries: IssueSummary[] = [];
   const prsCreated: Array<{ number: number; url: string; issueNumber: number }> = [];
+  const changes: BranchChange[] = [];
   const semaphore = new Semaphore(config.concurrency);
   let spent = 0;
 
@@ -237,18 +277,27 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
         repoBrief: brief,
         readiness: selection.readiness.get(issue.number),
         maxCostUsd: caps.length > 0 ? Math.min(...caps) : undefined,
+        siblings: selection.selected
+          .filter((other) => other.number !== issue.number)
+          .map((other) => ({ number: other.number, title: other.title, classification: other.classification })),
       });
 
       spent += outcome.costUsd;
       telemetry.recordIssue(outcome.telemetry);
       issueSummaries.push(outcome.summary);
       if (outcome.pr) prsCreated.push({ ...outcome.pr, issueNumber: issue.number });
+      if (outcome.change) changes.push(outcome.change);
     } finally {
       semaphore.release();
     }
   }));
 
-  // 6. Generate summary
+  // 6. Flag PRs from this run that change the same files
+  if (changes.length > 1) {
+    await flagOverlaps(changes, issueSummaries, github, cwd);
+  }
+
+  // 7. Generate summary
   const summary: RunSummary = {
     startedAt: new Date(startTime).toISOString(),
     duration: Date.now() - startTime,
@@ -266,7 +315,8 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
 
   // Telemetry: save local stats and optionally send remote event
   try {
-    const anonymousId = await getAnonymousId(cwd, config.stateDir);
+    // Only create the anonymous ID file when telemetry is on
+    const anonymousId = config.telemetry ? await getAnonymousId(cwd, config.stateDir) : "local";
     const event = telemetry.buildEvent({
       anonymousId,
       startedAt: summary.startedAt,
@@ -284,7 +334,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     });
 
     // Always save local stats
-    await updateStats(event, cwd, config.stateDir);
+    await updateStats(event, cwd, config.stateDir, summary.totalCostUsd);
 
     // Remote send only if telemetry is enabled
     if (config.telemetry) {

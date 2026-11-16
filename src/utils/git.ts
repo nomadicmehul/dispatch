@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { log } from "./logger.js";
+import { scrubEnv } from "./env.js";
 
 const exec = promisify(execFile);
 
@@ -9,6 +10,11 @@ export interface GitResult {
   stderr: string;
 }
 
+/**
+ * Run git without credentials in its environment. Local git commands don't need them,
+ * and hooks (which an agent can write) run with git's environment.
+ * Commands that talk to the remote use gitRemote() instead.
+ */
 export async function git(
   args: string[],
   cwd?: string,
@@ -18,7 +24,44 @@ export async function git(
   const { stdout, stderr } = await exec("git", args, {
     cwd: cwd || process.cwd(),
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
-    env: options.env ? { ...process.env, ...options.env } : undefined,
+    env: { ...scrubEnv(process.env), ...options.env },
+  });
+  return { stdout: stdout.trim(), stderr: stderr.trim() };
+}
+
+/**
+ * Git config, passed through the environment, that authenticates github.com with
+ * GITHUB_TOKEN for one command. Only in GitHub Actions: there the workflow checks out
+ * with persist-credentials: false, so the token is never written to .git/config where
+ * an agent could read it. Locally, the user's own credential helper is used.
+ */
+export function remoteAuthEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const token = env.GITHUB_TOKEN;
+  if (env.GITHUB_ACTIONS !== "true" || !token) return {};
+  const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
+  const key = "http.https://github.com/.extraheader";
+  // An empty value first clears any header a checkout persisted (older workflows),
+  // so git never sends two Authorization headers
+  return {
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: key,
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: key,
+    GIT_CONFIG_VALUE_1: `AUTHORIZATION: basic ${basic}`,
+  };
+}
+
+/**
+ * Run a git command that talks to the remote (fetch, push, ls-remote). It keeps the
+ * user's environment so credential helpers work, adds the Actions token when there is
+ * one, and disables hooks so a hook written by an agent never sees that token.
+ */
+export async function gitRemote(args: string[], cwd?: string): Promise<GitResult> {
+  log.debug(`git ${args.join(" ")}`);
+  const { stdout, stderr } = await exec("git", ["-c", "core.hooksPath=/dev/null", ...args], {
+    cwd: cwd || process.cwd(),
+    maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, ...remoteAuthEnv() },
   });
   return { stdout: stdout.trim(), stderr: stderr.trim() };
 }
@@ -141,12 +184,12 @@ export async function commitStaged(message: string, cwd: string): Promise<string
 
 /** Push a branch to origin and set its upstream */
 export async function pushBranch(branchName: string, cwd: string): Promise<void> {
-  await git(["push", "-u", "origin", branchName], cwd);
+  await gitRemote(["push", "-u", "origin", branchName], cwd);
 }
 
 /** Branch names on origin matching a glob, e.g. "dispatch/issue-*" */
 export async function listRemoteBranches(pattern: string, cwd: string): Promise<string[]> {
-  const { stdout } = await git(["ls-remote", "--heads", "origin", `refs/heads/${pattern}`], cwd);
+  const { stdout } = await gitRemote(["ls-remote", "--heads", "origin", `refs/heads/${pattern}`], cwd);
   return stdout
     .split("\n")
     .map((line) => line.split("\t")[1] || "")

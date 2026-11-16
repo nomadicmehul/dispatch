@@ -17,6 +17,10 @@ export function registerStatusCommand(program: Command) {
         const summary = await loadLastSummary(cwd, config.stateDir);
 
         if (!summary) {
+          if (options.json) {
+            console.log("null");
+            return;
+          }
           log.info("No previous dispatch run found.");
           log.info(`Run ${chalk.yellow("dispatch run")} to solve some issues first.`);
           return;

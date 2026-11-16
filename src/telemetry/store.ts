@@ -19,12 +19,15 @@ export interface AggregateStats {
   engineUsage: Record<string, number>;
   avgSolveTimeMs: number;
   failureCategoryBreakdown: Record<string, number>;
+  /** Agent spend in USD, for engines that report it. Kept locally only; never sent as telemetry */
+  totalCostUsd?: number;
   recentRuns: Array<{
     timestamp: string;
     issuesProcessed: number;
     issuesSolved: number;
     prsCreated: number;
     durationMs: number;
+    costUsd?: number;
   }>;
 }
 
@@ -66,8 +69,10 @@ export async function updateStats(
   event: RunTelemetryEvent,
   cwd: string,
   stateDir: string,
+  costUsd?: number,
 ): Promise<void> {
   const stats = await loadStats(cwd, stateDir);
+  if (costUsd !== undefined) stats.totalCostUsd = (stats.totalCostUsd ?? 0) + costUsd;
 
   if (!stats.firstRunAt) stats.firstRunAt = event.timestamp;
   stats.lastRunAt = event.timestamp;
@@ -110,6 +115,7 @@ export async function updateStats(
     issuesSolved: event.issuesSolved,
     prsCreated: event.prsCreated,
     durationMs: event.durationMs,
+    costUsd,
   });
   if (stats.recentRuns.length > MAX_RECENT_RUNS) {
     stats.recentRuns = stats.recentRuns.slice(-MAX_RECENT_RUNS);

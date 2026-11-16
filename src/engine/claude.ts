@@ -17,7 +17,10 @@ import {
   CLASSIFICATION_PROMPT,
   ISSUE_CREATION_PROMPT,
   SECURITY_PROMPT,
+  PRECEDENCE_PROMPT,
   REPAIR_PROMPT,
+  siblingPrompt,
+  reportClassification,
 } from "./base.js";
 import { scrubEnv, secretValues } from "../utils/env.js";
 import { redactSecrets } from "../provenance/redact.js";
@@ -404,9 +407,15 @@ ${shellNote(context.allowedCommands)}
 After making all changes, output your self-assessment as a JSON block at the very end of your response.
 ${CONFIDENCE_PROMPT}`;
 
-    // The repo brief goes first: it is identical for every session in a run, so the
-    // shared prefix gives the prompt cache more to reuse
-    const systemParts = [context.repoBrief, SECURITY_PROMPT, SYSTEM_PROMPTS[classification]].filter(Boolean);
+    // Shared parts go first: they are identical for every session in a run, so the
+    // common prefix gives the prompt cache more to reuse. Per-issue parts go last.
+    const systemParts = [
+      context.repoBrief,
+      PRECEDENCE_PROMPT,
+      SECURITY_PROMPT,
+      SYSTEM_PROMPTS[classification],
+      siblingPrompt(context.siblings),
+    ].filter(Boolean);
 
     const run = await this.runClaude(combinedPrompt, {
       appendSystemPrompt: systemParts.join("\n\n"),
@@ -424,8 +433,8 @@ ${CONFIDENCE_PROMPT}`;
   }
 
   async investigate(issue: Issue, context: RepoContext): Promise<SolveResult> {
-    // Investigation uses the same flow but with investigation system prompt
-    const investigationIssue: Issue = { ...issue, classification: "investigation" as IssueClassification };
+    // Same flow as solve(), with the report prompt for the issue's type (documentation keeps its own)
+    const investigationIssue: Issue = { ...issue, classification: reportClassification(issue.classification) };
     return this.solve(investigationIssue, context);
   }
 
@@ -468,8 +477,9 @@ ${CONFIDENCE_PROMPT}`;
     const prompt = ISSUE_CREATION_PROMPT.replace("{description}", () => description);
 
     const run = await this.runClaude(prompt, {
+      appendSystemPrompt: context.repoBrief,
       cwd: context.cwd,
-      maxTurns: 3,
+      maxTurns: 6, // room to look up the files the issue should name
       allowedTools: ["Read", "Glob", "Grep"],
       persist: false,
     });

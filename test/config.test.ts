@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { applyCliOverrides, DEFAULT_CONFIG } from "../src/utils/config.js";
+import { Command } from "commander";
+import { applyCliOverrides, ConfigError, DEFAULT_CONFIG } from "../src/utils/config.js";
 
 describe("applyCliOverrides", () => {
   it("overrides engine", () => {
@@ -62,5 +63,40 @@ describe("applyCliOverrides", () => {
     const original = { ...DEFAULT_CONFIG };
     applyCliOverrides(original, { model: "opus" });
     assert.equal(original.model, DEFAULT_CONFIG.model);
+  });
+
+  /** Options exactly as `dispatch run` parses them */
+  function parseRunFlags(...argv: string[]): Record<string, unknown> {
+    const cmd = new Command()
+      .option("--max-issues <n>", "", parseInt)
+      .option("--concurrency <n>", "", parseInt)
+      .option("--max-cost <usd>", "", parseFloat)
+      .option("--max-cost-per-issue <usd>", "", parseFloat)
+      .option("--no-repo-brief")
+      .option("--no-telemetry")
+      .exitOverride();
+    cmd.parse(["node", "dispatch", ...argv]);
+    return cmd.opts();
+  }
+
+  it("turns telemetry off with --no-telemetry", () => {
+    assert.equal(applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--no-telemetry")).telemetry, false);
+    assert.equal(applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags()).telemetry, true);
+  });
+
+  it("rejects an invalid spend cap instead of running uncapped", () => {
+    assert.throws(() => applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--max-cost", "-1")), ConfigError);
+    assert.throws(() => applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--max-cost", "abc")), ConfigError);
+    assert.throws(() => applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--max-cost-per-issue", "x")), ConfigError);
+    assert.equal(applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--max-cost", "5")).maxCostPerRun, 5);
+    assert.equal(applyCliOverrides({ ...DEFAULT_CONFIG }, parseRunFlags("--max-cost", "0")).maxCostPerRun, 0);
+  });
+
+  it("keeps the configured value for zero or non-numeric counts", () => {
+    const base = { ...DEFAULT_CONFIG, maxIssues: 7, concurrency: 2 };
+    assert.equal(applyCliOverrides(base, parseRunFlags("--max-issues", "0")).maxIssues, 7);
+    assert.equal(applyCliOverrides(base, parseRunFlags("--max-issues", "abc")).maxIssues, 7);
+    assert.equal(applyCliOverrides(base, parseRunFlags("--concurrency", "0")).concurrency, 2);
+    assert.equal(applyCliOverrides(base, parseRunFlags("--max-issues", "4")).maxIssues, 4);
   });
 });

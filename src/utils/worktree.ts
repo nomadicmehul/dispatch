@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { rm, access } from "node:fs/promises";
-import { git } from "./git.js";
+import { git, gitRemote } from "./git.js";
 import { log } from "./logger.js";
 
 /**
@@ -30,7 +30,7 @@ export async function createWorktree(
     // ignore prune errors
   }
 
-  await git(["fetch", "origin", baseBranch], cwd);
+  await gitRemote(["fetch", "origin", baseBranch], cwd);
 
   // Delete stale branch from a previous crashed run (if it exists)
   try {
@@ -68,7 +68,7 @@ export async function createWorktreeFromBranch(
     // ignore prune errors
   }
 
-  await git(["fetch", "origin", branchName], cwd);
+  await gitRemote(["fetch", "origin", branchName], cwd);
   await git(["worktree", "add", "-B", branchName, worktreePath, `origin/${branchName}`], cwd);
 }
 

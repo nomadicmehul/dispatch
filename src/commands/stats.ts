@@ -16,14 +16,14 @@ export function registerStatsCommand(program: Command) {
         const config = await loadConfig(cwd);
         const stats = await loadStats(cwd, config.stateDir);
 
-        if (stats.totalRuns === 0) {
-          log.info("No dispatch runs recorded yet.");
-          log.info(`Run ${chalk.yellow("dispatch run")} to get started.`);
+        if (options.json) {
+          console.log(JSON.stringify(stats, null, 2));
           return;
         }
 
-        if (options.json) {
-          console.log(JSON.stringify(stats, null, 2));
+        if (stats.totalRuns === 0) {
+          log.info("No dispatch runs recorded yet.");
+          log.info(`Run ${chalk.yellow("dispatch run")} to get started.`);
           return;
         }
 
@@ -70,6 +70,12 @@ function printStats(stats: AggregateStats, recentCount?: number) {
   console.log(`    Issues failed:      ${chalk.red(String(stats.totalIssuesFailed))}`);
   console.log(`    PRs created:        ${chalk.cyan(String(stats.totalPRsCreated))}`);
   console.log(`    Total time:         ${chalk.gray(formatDuration(stats.totalDurationMs))}`);
+  if (stats.totalCostUsd !== undefined) {
+    const perPR = stats.totalPRsCreated > 0
+      ? ` (${chalk.gray(`$${(stats.totalCostUsd / stats.totalPRsCreated).toFixed(2)} per PR`)})`
+      : "";
+    console.log(`    Agent cost:         ${chalk.white(`$${stats.totalCostUsd.toFixed(2)}`)}${perPR}`);
+  }
 
   if (stats.totalIssuesProcessed > 0) {
     const successRate = ((stats.totalIssuesSolved / stats.totalIssuesProcessed) * 100).toFixed(1);
@@ -144,7 +150,7 @@ function printStats(stats: AggregateStats, recentCount?: number) {
         `${run.issuesProcessed} processed, ` +
         `${chalk.green(String(run.issuesSolved))} solved, ` +
         `${chalk.cyan(String(run.prsCreated))} PRs  ` +
-        chalk.gray(`(${duration})`)
+        chalk.gray(`(${duration}${run.costUsd !== undefined ? `, $${run.costUsd.toFixed(2)}` : ""})`)
       );
     }
     console.log();

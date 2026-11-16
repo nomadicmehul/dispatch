@@ -100,6 +100,16 @@ export function assessResult(
     lane = "ready";
   }
 
+  // Say why a PR that looks good still needs eyes, so the reviewer knows where to look
+  if (lane === "review") {
+    const reasons: string[] = [];
+    if (confidence < 8) reasons.push(`confidence ${confidence}/10 (Ready needs 8)`);
+    if (evidence.verify !== "passed") reasons.push("not verified");
+    const n = result.uncertainties.length;
+    if (n > 0) reasons.push(`${n} open uncertaint${n === 1 ? "y" : "ies"}: ${result.uncertainties[0]}${n > 1 ? " …" : ""}`);
+    signals.push({ ok: false, label: `Needs eyes because of ${reasons.join("; ")}` });
+  }
+
   return { confidence, selfConfidence, lane, signals };
 }
 

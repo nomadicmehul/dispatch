@@ -1,4 +1,4 @@
-import { git } from "../utils/git.js";
+import { git, gitRemote } from "../utils/git.js";
 import { log } from "../utils/logger.js";
 
 /**
@@ -151,7 +151,7 @@ export async function buildRunBrief(
   verifyCommand: string | null,
 ): Promise<{ brief: string; ref: string } | undefined> {
   try {
-    await git(["fetch", "origin", baseBranch], cwd);
+    await gitRemote(["fetch", "origin", baseBranch], cwd);
   } catch {
     // Offline or no remote: use whatever ref resolves below
   }

@@ -31,6 +31,14 @@ export async function createOctokit(): Promise<Octokit> {
 
   return new OctokitWithPlugins({
     auth: token,
+    // Failed requests are thrown and handled by the caller (e.g. a 404 when checking a
+    // label exists), so keep Octokit's own request log out of the console
+    log: {
+      debug: () => {},
+      info: () => {},
+      warn: (msg: string) => log.debug(msg),
+      error: (msg: string) => log.debug(msg),
+    },
     throttle: {
       onRateLimit: (retryAfter: number, options: { method: string; url: string }, _octokit: unknown, retryCount: number) => {
         log.warn(`Rate limit hit for ${options.method} ${options.url}, retrying after ${retryAfter}s`);

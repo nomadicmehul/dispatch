@@ -9,6 +9,8 @@ import { GitHubModelsEngine } from "../engine/github-models.js";
 import { GeminiEngine } from "../engine/gemini.js";
 import type { AIEngine } from "../engine/types.js";
 import { log } from "../utils/logger.js";
+import { buildRunBrief } from "../orchestrator/repo-brief.js";
+import { resolveVerifyCommand } from "../orchestrator/verify.js";
 
 export function registerCreateCommand(program: Command) {
   program
@@ -61,11 +63,15 @@ export function registerCreateCommand(program: Command) {
           });
         }
 
+        // The repo brief grounds the issue in this codebase (real files, the real test command)
+        const brief = await buildRunBrief(cwd, config.baseBranch, await resolveVerifyCommand(config.verifyCommand, cwd));
+
         const structured = await engine.createIssue(finalDescription, {
           owner,
           repo,
           baseBranch: config.baseBranch,
           cwd,
+          repoBrief: brief?.brief,
         });
 
         // Preview

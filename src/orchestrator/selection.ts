@@ -3,6 +3,7 @@ import { isTrustedAssociation, prioritizeIssues } from "../github/issues.js";
 import { scoreReadiness, type Readiness } from "./readiness.js";
 
 export type SkipReason =
+  | "excluded-label"
   | "already-dispatched"
   | "untrusted-author"
   | "not-ready"
@@ -18,6 +19,8 @@ export interface SkippedIssue {
 export interface SelectionOptions {
   /** GitHub author associations to trust; "*" trusts everyone */
   trustedAuthors: string[];
+  /** Issues with any of these labels are skipped */
+  excludeLabels?: string[];
   readyLabel: string;
   minReadiness: number;
   maxIssues: number;
@@ -60,6 +63,12 @@ export function selectIssues(issues: Issue[], options: SelectionOptions): Select
   const eligible: Issue[] = [];
 
   for (const issue of issues) {
+    const excluded = issue.labels.filter((label) => options.excludeLabels?.includes(label));
+    if (excluded.length > 0) {
+      skipped.push({ issue, reason: "excluded-label", detail: `labelled ${excluded.join(", ")}` });
+      continue;
+    }
+
     if (options.dispatched.has(issue.number)) {
       skipped.push({ issue, reason: "already-dispatched", detail: "a Dispatch branch already exists (delete it to retry)" });
       continue;
