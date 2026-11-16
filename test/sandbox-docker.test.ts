@@ -282,3 +282,14 @@ describe("dispatch schedule sandbox default", () => {
     }
   });
 });
+
+describe("worktree paths", () => {
+  it("are unique per session, so a deleted folder is never reused (Docker Desktop caches it as missing)", async () => {
+    const { getWorktreePath } = await import("../src/utils/worktree.js");
+    const a = getWorktreePath("/r", ".dispatch", 7, "11111111-aaaa");
+    const b = getWorktreePath("/r", ".dispatch", 7, "22222222-bbbb");
+    assert.equal(a, "/r/.dispatch/worktrees/issue-7-11111111");
+    assert.notEqual(a, b);
+    assert.equal(getWorktreePath("/r", ".dispatch", 7), "/r/.dispatch/worktrees/issue-7");
+  });
+});

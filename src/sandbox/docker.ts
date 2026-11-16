@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -232,6 +232,17 @@ export class DockerSandbox implements SandboxBackend {
   async prepareIssue(params: PrepareIssueParams): Promise<IssueSandbox> {
     const configDir = join(params.dir, "claude");
     await mkdir(configDir, { recursive: true });
+
+    // Docker Desktop on macOS can report a new folder as missing when a folder above it was
+    // deleted and recreated (e.g. a user removing .dispatch). Mounting an ancestor in a
+    // throwaway container refreshes its view; the container only runs `true`.
+    if (platform() === "darwin") {
+      await this.run([
+        "run", "--rm", "--network", "none",
+        "--mount", `type=bind,source=${params.repoRoot},target=/dispatch-refresh,readonly`,
+        PROXY_IMAGE, "true",
+      ], 60_000).catch(() => {});
+    }
 
     // An unguessable token per session, registered with the proxy; it never sees other sessions' tokens
     const token = randomBytes(16).toString("hex");

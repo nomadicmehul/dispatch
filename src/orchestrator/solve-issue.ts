@@ -164,7 +164,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
   const { config, engine, github, cwd } = ctx;
   const sessionId = randomUUID();
   const branchName = `${config.branchPrefix}issue-${issue.number}-${slugifyTitle(issue.title)}`;
-  const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number);
+  const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number, sessionId);
   const classification = issue.classification || "unknown";
   const isInvestigation = REPORT_TYPES.includes(issue.classification ?? "unknown");
   const keepRecords = config.provenance !== "off";
