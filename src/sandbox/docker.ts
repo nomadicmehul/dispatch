@@ -6,12 +6,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Launcher } from "../engine/types.js";
-import { SENTINEL_API_KEY, SENTINEL_OAUTH_TOKEN } from "./egress-proxy.js";
 import { log } from "../utils/logger.js";
+import { providerPlan, providerProblem, settingVars, type ProviderPlan } from "./providers.js";
 import {
-  AGENT_DOMAINS,
-  CLAUDE_CREDENTIAL_VARS,
-  CREDENTIAL_HINT,
   REGISTRY_DOMAINS,
   type IssueSandbox,
   type PrepareIssueParams,
@@ -56,14 +53,17 @@ export interface DockerOptions {
   /** docker binary */
   docker?: string;
   /**
-   * How Claude's credential reaches the agent. "gateway" (default): the agent gets a
-   * placeholder and talks to the Anthropic gateway in the proxy container, which adds the
-   * real credential, so it never enters the agent's container. "env": passed in as before.
+   * How Claude's credential reaches the agent. "gateway" (default): the agent talks to a
+   * gateway in the proxy container that adds the real credential (Anthropic API key or
+   * subscription token, or the Bedrock, Vertex AI or Foundry credential), so it never enters
+   * the agent's container. "env": passed in, and Claude calls the provider itself.
    */
   credentials?: "gateway" | "env";
   extraDomains?: string[];
   extraRead?: string[];
   extraWrite?: string[];
+  /** Tests only: the gateway sends model requests here instead of the provider */
+  gatewayUpstream?: string;
 }
 
 /** `docker run` arguments shared by the agent and verify containers */
@@ -134,10 +134,13 @@ export class DockerSandbox implements SandboxBackend {
   private started = false;
   /** Host folder of session tokens, mounted read-only into the proxy */
   private sessionsDir?: string;
+  /** Where Claude gets its model (Anthropic API, Bedrock, Vertex AI or Foundry) */
+  private readonly plan: ProviderPlan;
 
   constructor(private readonly options: DockerOptions) {
     this.docker = options.docker || "docker";
     this.image = options.image || DEFAULT_IMAGE;
+    this.plan = providerPlan(process.env);
   }
 
   private get gateway(): boolean {
@@ -145,25 +148,21 @@ export class DockerSandbox implements SandboxBackend {
   }
 
   /**
-   * Agent environment for gateway mode: the gateway as Claude's API endpoint (with the
-   * session token in the path, NO_PROXY so it isn't sent through the egress proxy) and a
-   * placeholder of the same kind as the real credential, which the gateway replaces.
+   * Agent environment for gateway mode: the gateway as the provider's endpoint (with the
+   * session token in the path, NO_PROXY so it isn't sent through the egress proxy) and no
+   * real credential: a placeholder the gateway replaces, or none for the cloud providers.
    */
   private gatewayEnv(token: string): Record<string, string> {
-    const placeholder: Record<string, string> = process.env.ANTHROPIC_API_KEY
-      ? { ANTHROPIC_API_KEY: SENTINEL_API_KEY }
-      : { CLAUDE_CODE_OAUTH_TOKEN: SENTINEL_OAUTH_TOKEN };
     return {
-      ANTHROPIC_BASE_URL: `http://${this.proxy}:${GATEWAY_PORT}/${token}`,
+      ...this.plan.gatewayAgentEnv(`http://${this.proxy}:${GATEWAY_PORT}/${token}`),
       NO_PROXY: this.proxy,
       no_proxy: this.proxy,
-      ...placeholder,
     };
   }
 
-  /** Hosts agents may reach directly. In gateway mode the Claude API is reached only through the gateway */
+  /** Hosts agents may reach directly. In gateway mode the model API is reached only through the gateway */
   private agentDomains(): string[] {
-    const claude = this.gateway ? [] : AGENT_DOMAINS;
+    const claude = this.gateway ? [] : this.plan.directHosts;
     return [...new Set([...claude, ...REGISTRY_DOMAINS, ...(this.options.extraDomains ?? [])])];
   }
 
@@ -184,8 +183,7 @@ export class DockerSandbox implements SandboxBackend {
     } catch {
       return `The Docker sandbox needs a running Docker daemon ("${this.docker} version" failed). Start Docker, or use --sandbox srt.`;
     }
-    if (!CLAUDE_CREDENTIAL_VARS.some((name) => env[name])) return CREDENTIAL_HINT;
-    return null;
+    return providerProblem(env, this.gateway ? "gateway" : "direct");
   }
 
   /** Build the default image if it isn't there; a configured image must already exist or be pullable */
@@ -221,18 +219,32 @@ export class DockerSandbox implements SandboxBackend {
 
     // Session tokens: the proxy refuses requests without a registered one
     this.sessionsDir = await realpath(await mkdtemp(join(tmpdir(), "dispatch-sessions-")));
-    // mkdtemp makes it 0700; the proxy runs as another user on Linux. 0711 lets it open a
-    // token file by name without being able to list the folder.
+    // mkdtemp makes it 0700. 0711 lets a proxy running as another user (where there are no
+    // POSIX user IDs to run it as ours) open a token file by name, without listing the folder.
     await chmod(this.sessionsDir, 0o711);
 
     const proxyDir = dirname(fileURLToPath(import.meta.url));
+    // The gateway's credential: variables passed by name so they stay off the command line,
+    // and for Vertex a credentials file mounted read-only, when there's no access token
+    const keyFile = this.gateway && this.plan.provider === "vertex" && !this.plan.credentialVars.length ? this.plan.credentialFile : undefined;
+    const gatewayArgs = this.gateway
+      ? [
+          "-e", `GATEWAY_PORT=${GATEWAY_PORT}`,
+          ...Object.entries(this.plan.gatewayEnv).flatMap(([name, value]) => ["-e", `${name}=${value}`]),
+          ...(this.options.gatewayUpstream ? ["-e", `GATEWAY_UPSTREAM=${this.options.gatewayUpstream}`] : []),
+          ...this.plan.credentialVars.flatMap((name) => ["-e", name]),
+          ...(keyFile ? ["--mount", `type=bind,source=${keyFile},target=/credentials/google.json,readonly`, "-e", "GOOGLE_APPLICATION_CREDENTIALS=/credentials/google.json"] : []),
+        ]
+      : [];
     await this.run([
       "run", "-d", "--rm", "--init",
       "--name", this.proxy,
       "--label", "dispatch=sandbox",
       "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges",
-      "--user", "node",
+      // As the calling user, like the agent containers: it can then read a key file that's
+      // private to that user (e.g. Google credentials, mode 0600 on Linux)
+      "--user", typeof process.getuid === "function" ? `${process.getuid()}:${process.getgid?.() ?? process.getuid()}` : "node",
       "--mount", `type=bind,source=${proxyDir},target=/proxy,readonly`,
       "--mount", `type=bind,source=${this.sessionsDir},target=/sessions,readonly`,
       "-e", "SESSIONS_DIR=/sessions",
@@ -240,8 +252,7 @@ export class DockerSandbox implements SandboxBackend {
       "-e", `VERIFY_PORT=${VERIFY_PORT}`,
       "-e", `AGENT_DOMAINS=${this.agentDomains().join(",")}`,
       "-e", `VERIFY_DOMAINS=${this.verifyDomains().join(",")}`,
-      // The gateway's real credential, passed by name so it stays off the command line
-      ...(this.gateway ? ["-e", `GATEWAY_PORT=${GATEWAY_PORT}`, ...CLAUDE_CREDENTIAL_VARS.flatMap((name) => ["-e", name])] : []),
+      ...gatewayArgs,
       PROXY_IMAGE, "node", "/proxy/egress-proxy.js",
     ], 10 * 60_000);
     await this.run(["network", "connect", this.network, this.proxy]);
@@ -286,7 +297,9 @@ export class DockerSandbox implements SandboxBackend {
 
     const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
     const gid = typeof process.getgid === "function" ? process.getgid() : undefined;
-    const readOnly = await existing([...(params.linkedTargets ?? []), ...(this.options.extraRead ?? [])]);
+    // With credentials: env, a Vertex key file is mounted for Claude to read
+    const directKeyFile = !this.gateway && this.plan.credentialFile ? [this.plan.credentialFile] : [];
+    const readOnly = await existing([...(params.linkedTargets ?? []), ...(this.options.extraRead ?? []), ...directKeyFile]);
     const writable = [params.worktreePath, ...(await existing(this.options.extraWrite ?? []))];
     const stop = async () => {
       const { stdout } = await this.run(["ps", "-q", "--filter", `label=dispatch.session=${params.sessionId}`]).catch(() => ({ stdout: "" }));
@@ -308,18 +321,23 @@ export class DockerSandbox implements SandboxBackend {
       ...readOnly.map((path) => ({ path, readOnly: true })),
     ];
 
+    const agentEnv: Record<string, string> = {
+      CLAUDE_CONFIG_DIR: configDir,
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      ...(this.gateway ? this.gatewayEnv(token) : {}),
+      ...(directKeyFile.length ? { GOOGLE_APPLICATION_CREDENTIALS: directKeyFile[0] } : {}),
+    };
     const agent: Launcher = {
       command: this.docker,
       args: containerArgs({
         ...base,
         mounts: mounts([configDir]),
         proxy: `http://${token}@${this.proxy}:${AGENT_PORT}`,
-        env: {
-          CLAUDE_CONFIG_DIR: configDir,
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-          ...(this.gateway ? this.gatewayEnv(token) : {}),
-        },
-        passEnv: this.gateway ? [] : CLAUDE_CREDENTIAL_VARS,
+        env: agentEnv,
+        passEnv: [
+          ...settingVars(process.env),
+          ...(this.gateway ? [] : [...this.plan.directVars, ...this.plan.credentialVars]),
+        ].filter((name) => !(name in agentEnv)),
       }),
       configDir,
       stop,
@@ -343,7 +361,10 @@ export class DockerSandbox implements SandboxBackend {
         mode: "docker",
         image: this.image,
         credentials: this.gateway ? "gateway" : "env",
-        allowedDomains: this.gateway ? ["api.anthropic.com (via the credential gateway)", ...this.agentDomains()] : this.agentDomains(),
+        provider: this.plan.label,
+        allowedDomains: this.gateway
+          ? [...this.plan.gatewayHosts.map((host) => `${host} (via the credential gateway)`), ...this.agentDomains()]
+          : this.agentDomains(),
         allowRead: [params.worktreePath, configDir, ...readOnly],
         allowWrite: [params.worktreePath, configDir, ...(this.options.extraWrite ?? [])],
       },

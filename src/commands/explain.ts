@@ -85,7 +85,7 @@ function printExplanation(record: SessionRecord, timeline: TimelineEntry[], dir:
   row(
     "Sandbox",
     record.sandbox
-      ? `${record.sandbox.mode}${record.sandbox.image ? ` (${record.sandbox.image})` : ""}: network ${record.sandbox.allowedDomains.length} hosts, writes to the worktree only` +
+      ? `${record.sandbox.mode}${record.sandbox.image ? ` (${record.sandbox.image})` : ""}${record.sandbox.provider ? `, model via ${record.sandbox.provider}` : ""}: network ${record.sandbox.allowedDomains.length} hosts, writes to the worktree only` +
         (record.sandbox.blocked?.length ? `; blocked ${record.sandbox.blocked.join(", ")}` : record.sandbox.blocked ? "; nothing blocked" : "")
       : "none (agent ran with the user's access)",
   );

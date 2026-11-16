@@ -77,6 +77,10 @@ export function registerRunCommand(program: Command) {
           log.error(GITHUB_MODELS_RETIRED);
           process.exit(1);
         } else if (config.engine === "gemini") {
+          log.warn(
+            "The gemini engine is experimental: its tools run inside Dispatch's own process, without the sandbox, " +
+            "and it is due to be rebuilt on Gemini CLI. Use it only on repositories and issues you trust.",
+          );
           engine = new GeminiEngine({
             model: config.model === "sonnet" ? "gemini-2.5-pro" : config.model,
             maxTurns: config.maxTurnsPerIssue,

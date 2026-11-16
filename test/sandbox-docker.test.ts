@@ -150,7 +150,12 @@ describe("DockerSandbox", () => {
   });
 
   it("with credentials: env, passes the credential by name; verify never gets it", async () => {
-    const box = await prepare("env");
+    const saved = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-real";
+    const box = await prepare("env").finally(() => {
+      if (saved === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN; else process.env.CLAUDE_CODE_OAUTH_TOKEN = saved;
+    });
+    assert.doesNotMatch(box.agent.args.join(" "), /sk-ant-oat01-real/, "by name, not by value");
     const agent = box.agent.args.join(" ");
     const verify = box.verify.args.join(" ");
     assert.equal(box.agent.command, "docker");
@@ -340,7 +345,7 @@ describe("credential gateway", () => {
     const dir = join(tmpdir(), `dispatch-gw-${randomUUID()}`);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "0123456789abcdef0123456789abcdef"), "s1");
-    const server = startGateway(0, { apiKey: "k" }, dir, "upstream.invalid");
+    const server = startGateway(0, { provider: "anthropic", apiKey: "k", upstream: "http://upstream.invalid" }, dir);
     await new Promise((r) => server.once("listening", r));
     const port = (server.address() as AddressInfo).port;
     const status = (path: string) => new Promise<number>((resolve, reject) => {

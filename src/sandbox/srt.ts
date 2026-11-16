@@ -3,10 +3,9 @@ import { access, mkdir, realpath, writeFile } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { providerPlan, providerProblem } from "./providers.js";
 import {
-  AGENT_DOMAINS,
   REGISTRY_DOMAINS,
-  CREDENTIAL_HINT,
   type IssueSandbox,
   type PrepareIssueParams,
   type SandboxBackend,
@@ -102,10 +101,8 @@ export async function sandboxPreflight(
       (platform() === "linux" ? ", plus bubblewrap, socat and ripgrep." : ".")
     );
   }
-  if (!env.CLAUDE_CODE_OAUTH_TOKEN && !env.ANTHROPIC_API_KEY) {
-    return CREDENTIAL_HINT;
-  }
-  return null;
+  // Claude holds its credential inside srt: there's no gateway
+  return providerProblem(env, "direct");
 }
 
 /**
@@ -162,6 +159,9 @@ export async function prepareIssueSandbox(params: {
   const extraRead = options.extraRead ?? [];
   const extraWrite = options.extraWrite ?? [];
   const domains = options.extraDomains ?? [];
+  // The model provider's hosts, and a Vertex key file Claude must read (home is denied)
+  const plan = providerPlan(process.env, home);
+  const keyFile = plan.credentialFile && (await exists(plan.credentialFile)) ? [plan.credentialFile] : [];
 
   const commonRead = [
     worktreePath,
@@ -172,9 +172,10 @@ export async function prepareIssueSandbox(params: {
     ...extraWrite,
   ];
 
+
   const agentPolicy = {
-    allowedDomains: [...AGENT_DOMAINS, ...REGISTRY_DOMAINS, ...domains],
-    allowRead: [...commonRead, configDir],
+    allowedDomains: [...plan.directHosts, ...REGISTRY_DOMAINS, ...domains],
+    allowRead: [...commonRead, configDir, ...keyFile],
     allowWrite: [worktreePath, configDir, tmp, ...(claudeTmp ? [claudeTmp] : []), ...extraWrite],
   };
   const verifyPolicy = {
@@ -207,6 +208,7 @@ export async function prepareIssueSandbox(params: {
     },
     record: {
       mode: "srt",
+      provider: plan.label,
       allowedDomains: [...new Set(agentPolicy.allowedDomains)],
       allowRead: [...new Set(agentPolicy.allowRead)],
       allowWrite: [...new Set(agentPolicy.allowWrite)],
