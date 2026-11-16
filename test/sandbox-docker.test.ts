@@ -171,13 +171,28 @@ describe("choosing a sandbox", () => {
 });
 
 describe("sandbox evidence", () => {
-  it("attributes proxy log lines to sessions", async () => {
+  it("traces requests to sessions by registered token, and refuses everything else", async () => {
     const { sessionOf } = await import("../src/sandbox/egress-proxy.js");
+    const { writeFile } = await import("node:fs/promises");
+    const dir = join(tmpdir(), `dispatch-tokens-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const token = "0123456789abcdef0123456789abcdef";
+    await writeFile(join(dir, token), "sess-1");
+    const basic = (user: string) => "Basic " + Buffer.from(`${user}:`).toString("base64");
+    try {
+      assert.equal(sessionOf(basic(token), dir), "sess-1");
+      assert.equal(sessionOf(basic("ffffffffffffffffffffffffffffffff"), dir), null, "unknown token");
+      assert.equal(sessionOf(basic("sess-1"), dir), null, "a readable ID is not a token");
+      assert.equal(sessionOf(basic("../../etc/passwd"), dir), null, "no path tricks");
+      assert.equal(sessionOf(undefined, dir), null, "no header");
+      assert.equal(sessionOf(undefined), "-", "no token folder: accepted, untraced");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a session's blocked hosts, and untraced refusals for every session", async () => {
     const { parseBlocked } = await import("../src/sandbox/docker.js");
-    const header = "Basic " + Buffer.from("sess-1:").toString("base64");
-    assert.equal(sessionOf(header), "sess-1");
-    assert.equal(sessionOf(undefined), "-");
-    assert.equal(sessionOf("Basic " + Buffer.from("bad name;rm:").toString("base64")), "-");
     const log = [
       "listening agent on 3128: api.anthropic.com",
       "ALLOWED api.anthropic.com:443 (agent) session=sess-1",
@@ -186,8 +201,34 @@ describe("sandbox evidence", () => {
       "BLOCKED evil.test:443 (agent) session=sess-2",
       "BLOCKED other.test:443 (agent) session=-",
     ].join("\n");
-    assert.deepEqual(parseBlocked(log, "sess-1"), ["example.com:443"]);
-    assert.deepEqual(parseBlocked(log, "sess-3"), []);
+    assert.deepEqual(parseBlocked(log, "sess-1"), ["example.com:443", "other.test:443 (untraced)"]);
+    assert.deepEqual(parseBlocked(log, "sess-3"), ["other.test:443 (untraced)"]);
+    assert.deepEqual(parseBlocked("ALLOWED a:443 (agent) session=sess-1", "sess-1"), []);
+  });
+
+  it("answers 407 to clients without a registered session token", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const dir = join(tmpdir(), `dispatch-tokens-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const token = "abcdef0123456789abcdef0123456789";
+    await writeFile(join(dir, token), "sess-1");
+    const server = startProxy(0, ["example.com"], "test", dir);
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as AddressInfo).port;
+    const connect = (auth?: string) => new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "CONNECT", path: "not-listed.test:443", headers: auth ? { "Proxy-Authorization": auth } : {} });
+      req.on("connect", (res, socket) => { socket.destroy(); resolve(res.statusCode ?? 0); });
+      req.on("error", reject);
+      req.end();
+    });
+    try {
+      assert.equal(await connect(), 407);
+      assert.equal(await connect("Basic " + Buffer.from("ffffffffffffffffffffffffffffffff:").toString("base64")), 407);
+      assert.equal(await connect("Basic " + Buffer.from(`${token}:`).toString("base64")), 403, "known session, unlisted host");
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps a PR that hit blocked hosts out of the ready lane, and says why", async () => {

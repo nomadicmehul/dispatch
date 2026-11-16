@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -99,12 +100,18 @@ export function containerArgs(params: {
   return args;
 }
 
-/** Blocked `host:port` entries for one session from the proxy's log */
+/**
+ * Blocked `host:port` entries for one session from the proxy's log. Refusals the proxy
+ * couldn't trace to a session (no valid token) count for every session, marked as such:
+ * any agent in the run may have made them, so none of them should look clean.
+ */
 export function parseBlocked(log: string, sessionId: string): string[] {
   const hosts = new Set<string>();
   for (const line of log.split("\n")) {
     const match = line.match(/^BLOCKED (\S+) \(\w+\) session=([\w-]+)$/);
-    if (match && match[2] === sessionId) hosts.add(match[1]);
+    if (!match) continue;
+    if (match[2] === sessionId) hosts.add(match[1]);
+    else if (match[2] === "-") hosts.add(`${match[1]} (untraced)`);
   }
   return [...hosts];
 }
@@ -117,6 +124,8 @@ export class DockerSandbox implements SandboxBackend {
   private readonly proxy = `dispatch-proxy-${this.runId}`;
   private image: string;
   private started = false;
+  /** Host folder of session tokens, mounted read-only into the proxy */
+  private sessionsDir?: string;
 
   constructor(private readonly options: DockerOptions) {
     this.docker = options.docker || "docker";
@@ -179,6 +188,9 @@ export class DockerSandbox implements SandboxBackend {
     await this.run(["network", "create", "--internal", "--label", "dispatch=sandbox", this.network]);
     this.started = true;
 
+    // Session tokens: the proxy refuses requests without a registered one
+    this.sessionsDir = await realpath(await mkdtemp(join(tmpdir(), "dispatch-sessions-")));
+
     const proxyDir = dirname(fileURLToPath(import.meta.url));
     await this.run([
       "run", "-d", "--rm", "--init",
@@ -188,6 +200,8 @@ export class DockerSandbox implements SandboxBackend {
       "--security-opt", "no-new-privileges",
       "--user", "node",
       "--mount", `type=bind,source=${proxyDir},target=/proxy,readonly`,
+      "--mount", `type=bind,source=${this.sessionsDir},target=/sessions,readonly`,
+      "-e", "SESSIONS_DIR=/sessions",
       "-e", `AGENT_PORT=${AGENT_PORT}`,
       "-e", `VERIFY_PORT=${VERIFY_PORT}`,
       "-e", `AGENT_DOMAINS=${this.agentDomains().join(",")}`,
@@ -219,6 +233,10 @@ export class DockerSandbox implements SandboxBackend {
     const configDir = join(params.dir, "claude");
     await mkdir(configDir, { recursive: true });
 
+    // An unguessable token per session, registered with the proxy; it never sees other sessions' tokens
+    const token = randomBytes(16).toString("hex");
+    if (this.sessionsDir) await writeFile(join(this.sessionsDir, token), params.sessionId, { mode: 0o644 });
+
     const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
     const gid = typeof process.getgid === "function" ? process.getgid() : undefined;
     const readOnly = await existing([...(params.linkedTargets ?? []), ...(this.options.extraRead ?? [])]);
@@ -248,7 +266,7 @@ export class DockerSandbox implements SandboxBackend {
       args: containerArgs({
         ...base,
         mounts: mounts([configDir]),
-        proxy: `http://${params.sessionId}@${this.proxy}:${AGENT_PORT}`,
+        proxy: `http://${token}@${this.proxy}:${AGENT_PORT}`,
         env: { CLAUDE_CONFIG_DIR: configDir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
         passEnv: CLAUDE_CREDENTIAL_VARS,
       }),
@@ -260,7 +278,7 @@ export class DockerSandbox implements SandboxBackend {
       args: containerArgs({
         ...base,
         mounts: mounts(),
-        proxy: `http://${params.sessionId}@${this.proxy}:${VERIFY_PORT}`,
+        proxy: `http://${token}@${this.proxy}:${VERIFY_PORT}`,
         env: {},
         passEnv: [],
       }),
@@ -285,5 +303,6 @@ export class DockerSandbox implements SandboxBackend {
     this.started = false;
     await this.run(["rm", "-f", this.proxy]).catch(() => {});
     await this.run(["network", "rm", this.network]).catch(() => {});
+    if (this.sessionsDir) await rm(this.sessionsDir, { recursive: true, force: true }).catch(() => {});
   }
 }
