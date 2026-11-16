@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,6 +190,9 @@ export class DockerSandbox implements SandboxBackend {
 
     // Session tokens: the proxy refuses requests without a registered one
     this.sessionsDir = await realpath(await mkdtemp(join(tmpdir(), "dispatch-sessions-")));
+    // mkdtemp makes it 0700; the proxy runs as another user on Linux. 0711 lets it open a
+    // token file by name without being able to list the folder.
+    await chmod(this.sessionsDir, 0o711);
 
     const proxyDir = dirname(fileURLToPath(import.meta.url));
     await this.run([
