@@ -4,6 +4,7 @@ import { throttling } from "@octokit/plugin-throttling";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { log } from "../utils/logger.js";
+import { CLASSIFICATION_LABEL_STYLE, type LabelSpec } from "./labels.js";
 
 const exec = promisify(execFile);
 
@@ -233,25 +234,36 @@ export class GitHubClient {
     });
   }
 
-  /** Add a label to an issue */
-  async addLabel(issueNumber: number, label: string): Promise<void> {
+  /**
+   * Create a label if the repository doesn't have it. An existing label is left as is,
+   * so a maintainer's own colour or description wins. Returns true if it was created.
+   */
+  async ensureLabel(spec: LabelSpec): Promise<boolean> {
     try {
-      // Ensure label exists
+      await this.octokit.issues.getLabel({ owner: this.owner, repo: this.repo, name: spec.name });
+      return false;
+    } catch {
       try {
-        await this.octokit.issues.getLabel({
-          owner: this.owner,
-          repo: this.repo,
-          name: label,
-        });
-      } catch {
         await this.octokit.issues.createLabel({
           owner: this.owner,
           repo: this.repo,
-          name: label,
-          color: "7057ff",
-          description: "Auto-classified by dispatch",
+          name: spec.name,
+          color: spec.color,
+          description: spec.description,
         });
+        return true;
+      } catch (err) {
+        // Another issue in the same run may have created it a moment ago
+        if ((err as { status?: number }).status === 422) return false;
+        throw err;
       }
+    }
+  }
+
+  /** Add a label to an issue */
+  async addLabel(issueNumber: number, label: string): Promise<void> {
+    try {
+      await this.ensureLabel({ name: label, ...CLASSIFICATION_LABEL_STYLE });
 
       await this.octokit.issues.addLabels({
         owner: this.owner,

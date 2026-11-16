@@ -135,3 +135,38 @@ describe("buildPRBody with evidence and provenance", () => {
     assert.ok(body.includes("AssertionError: expected 1"));
   });
 });
+
+describe("ensureLabel", () => {
+  const spec = { name: "⚡ dispatch", color: "FBCA04", description: "Opened by Dispatch" };
+
+  async function clientWith(issues: Record<string, unknown>) {
+    const { GitHubClient } = await import("../src/github/client.js");
+    return new GitHubClient({ issues } as never, "o", "r");
+  }
+
+  it("creates a missing label with its colour and description", async () => {
+    const created: unknown[] = [];
+    const client = await clientWith({
+      getLabel: async () => { throw Object.assign(new Error("Not Found"), { status: 404 }); },
+      createLabel: async (args: unknown) => { created.push(args); },
+    });
+    assert.equal(await client.ensureLabel(spec), true);
+    assert.deepEqual(created, [{ owner: "o", repo: "r", ...spec }]);
+  });
+
+  it("leaves an existing label alone", async () => {
+    const client = await clientWith({
+      getLabel: async () => ({ data: { name: spec.name, color: "000000" } }),
+      createLabel: async () => { throw new Error("should not be called"); },
+    });
+    assert.equal(await client.ensureLabel(spec), false);
+  });
+
+  it("treats a label created a moment ago by another issue as existing", async () => {
+    const client = await clientWith({
+      getLabel: async () => { throw Object.assign(new Error("Not Found"), { status: 404 }); },
+      createLabel: async () => { throw Object.assign(new Error("already_exists"), { status: 422 }); },
+    });
+    assert.equal(await client.ensureLabel(spec), false);
+  });
+});
