@@ -13,7 +13,9 @@ export function createSandbox(config: DispatchConfig): SandboxBackend | undefine
     extraWrite: config.sandboxAllowWrite,
   };
   if (config.sandbox === "srt") return new SrtSandbox({ srtPath: config.srtPath, ...extra });
-  if (config.sandbox === "docker") return new DockerSandbox({ image: config.dockerImage, ...extra });
+  if (config.sandbox === "docker") {
+    return new DockerSandbox({ image: config.dockerImage, credentials: config.sandboxCredentials, ...extra });
+  }
   return undefined;
 }
 

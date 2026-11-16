@@ -8,6 +8,7 @@
  * node image with this file mounted read-only.
  */
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { connect, isIP } from "node:net";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -127,10 +128,84 @@ export function startProxy(port: number, allowList: string[], label: string, ses
   return server;
 }
 
+/** The placeholder credentials sandboxed agents get; the gateway swaps in the real ones */
+export const SENTINEL_API_KEY = "sk-ant-api03-dispatch-sandbox-placeholder-not-a-real-key";
+export const SENTINEL_OAUTH_TOKEN = "sk-ant-oat01-dispatch-sandbox-placeholder-not-a-real-token";
+
+/** Request headers with the placeholder credential replaced by the real one */
+export function injectCredentials(
+  headers: Record<string, string | string[] | undefined>,
+  creds: { apiKey?: string; oauthToken?: string },
+): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    const lower = name.toLowerCase();
+    if (["host", "connection", "proxy-authorization", "proxy-connection", "keep-alive", "transfer-encoding"].includes(lower)) continue;
+    out[lower] = value;
+  }
+  if (out["x-api-key"] !== undefined) {
+    if (creds.apiKey) out["x-api-key"] = creds.apiKey;
+    else delete out["x-api-key"];
+  }
+  if (typeof out["authorization"] === "string" && /^Bearer\s/i.test(out["authorization"])) {
+    if (creds.oauthToken) out["authorization"] = `Bearer ${creds.oauthToken}`;
+    else delete out["authorization"];
+  }
+  return out;
+}
+
+/**
+ * Anthropic gateway: plain HTTP on the sandbox network, forwarding to api.anthropic.com
+ * with the real credential. Agents get ANTHROPIC_BASE_URL=http://<proxy>:<port>/<token>
+ * and a placeholder key, so the real key or OAuth token never enters their container.
+ * The session token in the path is checked like the egress proxy's.
+ */
+export function startGateway(
+  port: number,
+  creds: { apiKey?: string; oauthToken?: string },
+  sessionsDir?: string,
+  upstream = "api.anthropic.com",
+) {
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const match = (req.url ?? "").match(/^\/([a-f0-9]{32})(\/.*)?$/);
+    const session = match ? sessionOf(`Basic ${Buffer.from(`${match[1]}:`).toString("base64")}`, sessionsDir) : null;
+    if (!match || session === null) {
+      console.log(`BLOCKED ${upstream}:443 (gateway) session=-`);
+      res.writeHead(407, { "X-Proxy-Error": "unknown-session" }).end();
+      return;
+    }
+    const path = match[2] || "/";
+    const upstreamReq = httpsRequest(
+      { host: upstream, port: 443, path, method: req.method, headers: { ...injectCredentials(req.headers, creds), host: upstream } },
+      (upRes) => {
+        console.log(`GATEWAY ${req.method} ${path.split("?")[0]} ${upRes.statusCode} session=${session}`);
+        res.writeHead(upRes.statusCode ?? 502, upRes.headers);
+        upRes.pipe(res);
+      },
+    );
+    upstreamReq.on("error", (err) => {
+      console.log(`GATEWAY ${req.method} ${path.split("?")[0]} error=${(err as NodeJS.ErrnoException).code ?? "?"} session=${session}`);
+      if (!res.headersSent) res.writeHead(502);
+      res.end();
+    });
+    req.pipe(upstreamReq);
+  });
+  server.listen(port, "0.0.0.0", () => console.log(`listening gateway on ${port}`));
+  return server;
+}
+
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const list = (name: string) => (process.env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const sessions = process.env.SESSIONS_DIR || undefined;
   startProxy(Number(process.env.AGENT_PORT ?? 3128), list("AGENT_DOMAINS"), "agent", sessions);
   startProxy(Number(process.env.VERIFY_PORT ?? 3129), list("VERIFY_DOMAINS"), "verify", sessions);
+  if (process.env.GATEWAY_PORT) {
+    startGateway(
+      Number(process.env.GATEWAY_PORT),
+      { apiKey: process.env.ANTHROPIC_API_KEY || undefined, oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || undefined },
+      sessions,
+    );
+  }
 }

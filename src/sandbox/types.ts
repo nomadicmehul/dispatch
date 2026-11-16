@@ -8,6 +8,8 @@ export interface SandboxRecord {
   allowedDomains: string[];
   allowRead: string[];
   allowWrite: string[];
+  /** Where Claude's credential lived: outside the container behind a gateway, or in its environment */
+  credentials?: "gateway" | "env";
   /** Hosts the sandbox refused for this session (docker), e.g. "example.com:443" */
   blocked?: string[];
 }

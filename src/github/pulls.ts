@@ -83,6 +83,7 @@ export function buildPRBody(
     body += `${box.blocked?.length ? `, ${box.blocked.length} blocked` : ", nothing blocked"}</summary>\n\n`;
     body += `- **Network:** ${box.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n`;
     body += `- **Writes:** the worktree and the session's Claude config only\n`;
+    if (box.credentials === "gateway") body += `- **Credentials:** kept outside the container; a gateway added them to Claude API requests\n`;
     if (box.blocked?.length) body += `- **Blocked:** ${box.blocked.map((d) => `\`${d}\``).join(", ")}\n`;
     body += `\n</details>\n\n`;
   }
