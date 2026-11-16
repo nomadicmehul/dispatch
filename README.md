@@ -252,6 +252,7 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `sandbox` | `"srt"` (Anthropic's sandbox-runtime) or `"docker"` runs each agent and its setup/verify commands in a sandbox ([Sandbox](#sandbox)); `"off"` runs them with your access | `"off"` |
 | `srtPath` | Path or name of the `srt` binary | `"srt"` |
 | `dockerImage` | Image for `--sandbox docker`: your toolchain plus the `claude` CLI. Empty = build `dispatch-sandbox:node22` | `""` |
+| `sandboxCredentials` | `--sandbox docker`: `"gateway"` keeps Claude's credential outside the agent's container; `"env"` passes it in | `"gateway"` |
 | `sandboxAllowedDomains` | Extra hosts sandboxed sessions may reach (besides the Claude API and package registries) | `[]` |
 | `sandboxAllowRead` / `sandboxAllowWrite` | Extra files or folders sandboxed sessions may read / write | `[]` |
 | `repoBrief` | Give every agent session a shared brief of the repo (built from the base branch, committed files only, ~4k chars max). Disable per run with `--no-repo-brief` | `true` |
@@ -294,6 +295,12 @@ Sandboxing is off by default. Turn it on to run each agent, and its setup and ve
 | Tools | whatever is installed on your machine | whatever is in the image |
 
 Either way, the whole `claude` process is inside, so its file tools, hooks and MCP servers are too. Claude Code's own sandbox setting covers only its Bash tool.
+
+**With Docker, Claude's credential never enters the agent's container.**
+- The agent gets a placeholder key or token, and points Claude at an Anthropic gateway in Dispatch's proxy container (`ANTHROPIC_BASE_URL`).
+- The gateway checks the session, swaps in your real `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and forwards to the Claude API.
+- A compromised agent can use the API through the gateway, but can't take the credential with it.
+- `"sandboxCredentials": "env"` turns this off and passes the credential in, as srt does.
 
 The table below describes the srt backend. The Docker backend applies the same network rules through its proxy, and mounts nothing else.
 
