@@ -88,10 +88,12 @@ function rawIssue(number: number, overrides: Record<string, unknown> = {}) {
 
 function fakeGitHub() {
   const prs: Array<Record<string, unknown>> = [];
+  const ensured: string[] = [];
   const client = {
     owner: "test",
     repo: "repo",
     prs,
+    ensured,
     async fetchOpenIssues() {
       return [
         rawIssue(1, { comments: 2 }),
@@ -111,6 +113,10 @@ function fakeGitHub() {
       return { number: 100 + prs.length, url: `https://github.com/test/repo/pull/${100 + prs.length}` };
     },
     async addLabel() {},
+    async ensureLabel(spec: { name: string }) {
+      ensured.push(spec.name);
+      return true;
+    },
   };
   return client;
 }
@@ -189,6 +195,9 @@ describe("runPipeline (end to end with a local git remote)", () => {
     const pr = github.prs[0];
     assert.ok(String(pr.head).startsWith("dispatch/issue-1-"));
     assert.equal(pr.draft, false);
+    // Every Dispatch PR carries the ⚡ label, created (with its colour) before the PR
+    assert.ok((pr.labels as string[]).includes("⚡ dispatch"));
+    assert.ok(github.ensured.includes("⚡ dispatch"));
     const body = String(pr.body);
     assert.ok(body.includes("`npm test` passed"));
     assert.ok(body.includes("Passed after 1 repair attempt"));

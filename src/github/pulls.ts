@@ -1,4 +1,5 @@
 import type { Issue, SolveResult } from "../engine/types.js";
+import { DISPATCH_LABEL } from "./labels.js";
 import type { GitHubClient } from "./client.js";
 import type { Assessment } from "../orchestrator/scorer.js";
 import { LANE_LABELS } from "../orchestrator/scorer.js";
@@ -142,7 +143,14 @@ export async function createPRForIssue(
     : firstLine;
   const prTitle = `[dispatch] ${truncated}`;
 
-  const labels: string[] = ["dispatch"];
+  // Create the ⚡ label with its colour first; GitHub would otherwise create it grey
+  try {
+    await client.ensureLabel(DISPATCH_LABEL);
+  } catch (err) {
+    log.debug(`Could not create the ${DISPATCH_LABEL.name} label: ${err instanceof Error ? err.message : err}`);
+  }
+
+  const labels: string[] = [DISPATCH_LABEL.name];
   const lane = options.details?.assessment?.lane;
   if (lane ? lane !== "ready" : result.confidence < 5) {
     labels.push("needs-review");

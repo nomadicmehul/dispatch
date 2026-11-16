@@ -183,6 +183,8 @@ dispatch init       # interactive setup
 dispatch init --yes # use defaults
 ```
 
+It writes `.dispatchrc.json` and marks the repository with a yellow **⚡ dispatch** label. Every PR Dispatch opens carries it, so Dispatch's work stands out in the PR list and is one filter away: `is:pr label:"⚡ dispatch"`.
+
 ## Configuration
 
 Dispatch reads `.dispatchrc.json` from your repo root:
