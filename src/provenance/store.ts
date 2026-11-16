@@ -45,6 +45,8 @@ export interface SessionRecord {
   workdir?: string;
   /** The shared repository brief the agent received, if any */
   repoBrief?: { ref: string; chars: number };
+  /** Sandbox the session ran in, and what it was allowed */
+  sandbox?: { mode: "srt"; allowedDomains: string[]; allowRead: string[]; allowWrite: string[] };
   commitSha?: string;
   prNumber?: number;
   prUrl?: string;

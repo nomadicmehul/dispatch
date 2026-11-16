@@ -54,6 +54,7 @@ dispatch run --base-branch develop    # target a different base branch
 dispatch run --verify-command "make check"   # how to test changes (default: auto-detect)
 dispatch run --max-cost 5             # stop starting new issues after $5 of spend
 dispatch run --provenance ref         # also push session records to refs/dispatch/sessions/*
+dispatch run --sandbox                # run each agent and its tests inside a sandbox (see Sandbox)
 ```
 
 **What happens:**
@@ -133,6 +134,7 @@ dispatch schedule --auth claude-code      # Claude Pro/Max subscription token in
 dispatch schedule --auth gemini           # uses GEMINI_API_KEY secret (default: gemini-2.5-pro)
 dispatch schedule --auth gemini --model gemini-3-pro-preview  # Gemini 3 series model
 dispatch schedule --stdout                # print workflow YAML without writing file
+dispatch schedule --sandbox               # run agents inside sandbox-runtime on the runner (claude engine)
 ```
 
 **What happens:**
@@ -144,6 +146,7 @@ dispatch schedule --stdout                # print workflow YAML without writing 
 6. Checks out with `persist-credentials: false`, so the token is never written to `.git/config` where the agent could read it. Dispatch hands it to git only for its own fetch and push. If you generated your workflow with an earlier version, run `dispatch schedule` again to pick this up
 
 **Required setup after running:**
+- **All methods:** let Actions open pull requests: *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests*. New repositories have it off, and Dispatch's PRs then fail with "GitHub Actions is not permitted to create or approve pull requests". A `DISPATCH_GITHUB_TOKEN` secret works too.
 - **`api-key`** (default): Add `ANTHROPIC_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
 - **`claude-code`** (subscription): Run `claude setup-token`, add the token as a `CLAUDE_CODE_OAUTH_TOKEN` secret, then commit and push
 - **`gemini`**: Add `GEMINI_API_KEY` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then commit and push
@@ -242,6 +245,10 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `maxCostPerIssue` | Spend cap per issue in USD, enforced by Claude Code (`0` = none) | `0` |
 | `maxCostPerRun` | Spend cap per run in USD; no new issues start once reached (`0` = none) | `0` |
 | `provenance` | Session records: `"local"` (`.dispatch/sessions`), `"ref"` (also pushed to `refs/dispatch/sessions/*`), `"off"` | `"local"` |
+| `sandbox` | `"srt"` runs each agent and its setup/verify commands inside Anthropic's sandbox-runtime ([Sandbox](#sandbox)); `"off"` runs them with your access | `"off"` |
+| `srtPath` | Path or name of the `srt` binary | `"srt"` |
+| `sandboxAllowedDomains` | Extra hosts sandboxed sessions may reach (besides the Claude API and package registries) | `[]` |
+| `sandboxAllowRead` / `sandboxAllowWrite` | Extra files or folders sandboxed sessions may read / write | `[]` |
 | `repoBrief` | Give every agent session a shared brief of the repo (built from the base branch, committed files only, ~4k chars max). Disable per run with `--no-repo-brief` | `true` |
 | `telemetry` | Enable anonymous usage analytics | `true` |
 
@@ -264,9 +271,34 @@ Dispatch hands issue text to an agent that can edit code and run your tests, so 
 
 - **Trusted authors only.** Issues are dispatched only when the author is an owner, member, or collaborator (`trustedAuthors`). Anyone else's issue is skipped until a maintainer adds the `dispatch:ready` label. Comments from untrusted authors are left out of the prompt.
 - **No GitHub token for the agent.** Claude Code runs with only the credentials it needs (your Anthropic key or subscription token). `GITHUB_TOKEN` and other secrets are removed from its environment, and from the environment your tests run in.
-- **A narrow allowlist.** The agent can read, search, and edit files, and run your verify command. No other shell commands, and no web tools.
+- **A narrow allowlist.** The agent can read, search, and edit files, and run your verify command, with no other shell commands and no web tools. Note that the agent can edit what your verify command runs (e.g. `package.json` scripts), so treat it as able to run code. Use the [sandbox](#sandbox) to contain that.
+- **No credentials in commits.** A change that contains the value of any credential variable (`*_TOKEN`, `*_API_KEY`, …) is not committed or pushed.
 - **Secrets held back.** Files like `.env`, `*.pem`, and `id_rsa` are never committed; the PR lists anything that was held back. Templates such as `.env.example` are committed as normal.
 - **Redacted records.** Session transcripts are scrubbed of token formats and of the values of secret environment variables before they are saved.
+
+## Sandbox
+
+`dispatch run --sandbox` (or `"sandbox": "srt"`) runs each agent, and its setup and verify commands, inside [Anthropic's sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) (`srt`): Seatbelt on macOS, bubblewrap on Linux. The whole `claude` process is wrapped, so its file tools, hooks and MCP servers are inside the boundary too. Claude Code's own sandbox setting covers only its Bash tool.
+
+| Inside the sandbox | Agent | Setup & verify commands |
+|---|---|---|
+| Read | its worktree, toolchains (`~/.nvm`, `~/.cargo`, …), the `claude` binary, a fresh per-issue Claude config folder; **not** the rest of `$HOME` (credentials, `~/.claude`, other projects) or the main checkout | the same, without the Claude config |
+| Write | its worktree, its Claude config folder, the temp folder | its worktree, the temp folder |
+| Network | the Claude API and package registries (npm, PyPI, Go, crates, RubyGems), plus `sandboxAllowedDomains` | package registries, plus `sandboxAllowedDomains` |
+
+Each issue gets a fresh `CLAUDE_CONFIG_DIR`, so your hooks, MCP servers and memory don't load, and nothing is written to your real `~/.claude`. Session records and `dispatch explain` show the policy.
+
+**Setup**
+- Install it: `npm install -g @anthropic-ai/sandbox-runtime` (Node 22.12+). On Linux also install `bubblewrap`, `socat` and `ripgrep`.
+- Give Claude a credential in the environment. The sandbox keeps it away from your keychain: run `claude setup-token` and export `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY`.
+- In GitHub Actions, `dispatch schedule --sandbox` generates the install step. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
+
+**Limits**
+- Sandbox mode fails closed: it refuses to start without `srt`, without an environment credential, or with the Gemini engine, which runs its tools inside Dispatch's own process.
+- macOS and Linux only; on Windows, use WSL2.
+- `srt` is a beta research preview.
+- On Linux a denied folder is replaced by an empty, throwaway one: writes to it succeed inside the sandbox and are discarded.
+- A sandbox doesn't stop a prompt-injected change from landing in a PR. Review still matters.
 
 ## Readiness
 
@@ -458,6 +490,8 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 - [x] Trust gate, readiness scoring, and idempotent nightly runs
 - [x] Verification gate with agent repair, evidence-based scoring, review lanes
 - [x] Session provenance (`dispatch explain`, `dispatch resume`, commit trailers, session refs)
+- [x] Opt-in sandbox for agents and their tests (sandbox-runtime, macOS and Linux)
+- [ ] Docker backend for the sandbox (reuse `devcontainer.json`)
 - [ ] Gemini: sandbox hardening, transcripts, cost tracking, repair
 - [ ] Codex engine
 - [ ] Learn from PR outcomes (which issue types and engines actually get merged)

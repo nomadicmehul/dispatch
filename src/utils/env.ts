@@ -20,6 +20,13 @@ export function scrubEnv(env: NodeJS.ProcessEnv, keep: RegExp[] = []): NodeJS.Pr
   return result;
 }
 
+/** Name and value of each credential-looking variable with a value long enough to matter */
+export function secretEntries(env: NodeJS.ProcessEnv = process.env): Array<[string, string]> {
+  return Object.entries(env)
+    .filter(([name, value]) => isSecretName(name) && typeof value === "string" && value.length >= 8)
+    .map(([name, value]) => [name, value as string]);
+}
+
 /** Values of credential-looking variables, for redacting them from transcripts and logs */
 export function secretValues(env: NodeJS.ProcessEnv = process.env): string[] {
   return Object.entries(env)

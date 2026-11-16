@@ -12,6 +12,7 @@ import { selectIssues, parseDispatchedIssueNumbers, type Selection, type Skipped
 import { resolveVerifyCommand } from "./verify.js";
 import { buildRunBrief } from "./repo-brief.js";
 import { solveIssue } from "./solve-issue.js";
+import { sandboxPreflight, type SandboxOptions } from "../sandbox/srt.js";
 import { detectOverlaps, describeOverlap, overlapComment, type BranchChange } from "./overlap.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { cleanupAllWorktrees } from "../utils/worktree.js";
@@ -238,6 +239,20 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
     log.info(`Repo brief: ${brief.brief.length} chars from ${brief.ref}, shared by every session`);
   }
 
+  // Sandbox mode fails closed: if it can't run, nothing runs unsandboxed instead
+  let sandbox: SandboxOptions | undefined;
+  if (config.sandbox === "srt") {
+    const problem = await sandboxPreflight({ srtPath: config.srtPath, engine: engine.name });
+    if (problem) throw new Error(problem);
+    sandbox = {
+      srtPath: config.srtPath,
+      extraDomains: config.sandboxAllowedDomains,
+      extraRead: config.sandboxAllowRead,
+      extraWrite: config.sandboxAllowWrite,
+    };
+    log.info(`Sandbox: ${chalk.cyan("srt")}. Agents read only their worktree and toolchains, and reach only the Claude API and package registries`);
+  }
+
   if ((config.maxCostPerRun > 0 || config.maxCostPerIssue > 0) && engine.name !== "claude") {
     log.warn(`Spend caps need an engine that reports cost; "${engine.name}" doesn't, so caps won't apply.`);
   }
@@ -277,6 +292,7 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
         repoBrief: brief,
         readiness: selection.readiness.get(issue.number),
         maxCostUsd: caps.length > 0 ? Math.min(...caps) : undefined,
+        sandbox,
         siblings: selection.selected
           .filter((other) => other.number !== issue.number)
           .map((other) => ({ number: other.number, title: other.title, classification: other.classification })),

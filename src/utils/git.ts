@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { log } from "./logger.js";
-import { scrubEnv } from "./env.js";
+import { scrubEnv, secretEntries } from "./env.js";
 
 const exec = promisify(execFile);
 
@@ -173,6 +173,17 @@ async function identityEnv(cwd: string): Promise<NodeJS.ProcessEnv> {
     GIT_COMMITTER_NAME: name,
     GIT_COMMITTER_EMAIL: email,
   };
+}
+
+/**
+ * Names of credential variables whose values appear in the staged diff. An agent that
+ * read a token (from its environment, or a file) must not get it committed and pushed.
+ */
+export async function secretsInStagedDiff(cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+  const entries = secretEntries(env);
+  if (entries.length === 0) return [];
+  const { stdout } = await git(["diff", "--cached", "--no-color", "--no-ext-diff", "-U0"], cwd, { maxBuffer: 64 * 1024 * 1024 });
+  return entries.filter(([, value]) => stdout.includes(value)).map(([name]) => name);
 }
 
 /** Commit the staged changes and return the new commit SHA */

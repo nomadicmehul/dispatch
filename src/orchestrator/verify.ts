@@ -1,3 +1,4 @@
+import type { Launcher } from "../engine/types.js";
 import { spawn } from "node:child_process";
 import { access, readFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -83,11 +84,12 @@ export async function resolveVerifyCommand(configured: string, cwd: string): Pro
  * Verification runs code the agent just wrote, so it gets no tokens or API keys.
  * The whole process group is killed on timeout, so test runners can't linger.
  */
-export function runCommand(command: string, cwd: string, timeoutMs: number): Promise<CommandResult> {
+export function runCommand(command: string, cwd: string, timeoutMs: number, launcher?: Launcher): Promise<CommandResult> {
   const start = Date.now();
 
   return new Promise((resolve) => {
-    const child = spawn("sh", ["-c", command], {
+    const program = ["sh", "-c", command];
+    const child = spawn(launcher ? launcher.command : program[0], launcher ? [...launcher.args, ...program] : program.slice(1), {
       cwd,
       env: { ...scrubEnv(process.env), CI: process.env.CI ?? "true" },
       stdio: ["ignore", "pipe", "pipe"],
@@ -125,8 +127,8 @@ export function runCommand(command: string, cwd: string, timeoutMs: number): Pro
 }
 
 /** Run the verify command and summarize the outcome */
-export async function runVerify(command: string, cwd: string, timeoutMs: number): Promise<VerifyOutcome> {
-  const result = await runCommand(command, cwd, timeoutMs);
+export async function runVerify(command: string, cwd: string, timeoutMs: number, launcher?: Launcher): Promise<VerifyOutcome> {
+  const result = await runCommand(command, cwd, timeoutMs, launcher);
   return {
     command,
     status: result.exitCode === 0 && !result.timedOut ? "passed" : "failed",
@@ -148,9 +150,11 @@ export async function prepareWorktree(
   repoRoot: string,
   setupCommand: string,
   timeoutMs: number,
+  launcher?: Launcher,
 ): Promise<{ linked: string[]; setup?: CommandResult }> {
   if (setupCommand.trim()) {
-    return { linked: [], setup: await runCommand(setupCommand, worktreePath, timeoutMs) };
+    // The setup command (e.g. "npm ci") runs install scripts, so it gets the same boundary as verify
+    return { linked: [], setup: await runCommand(setupCommand, worktreePath, timeoutMs, launcher) };
   }
 
   const source = join(repoRoot, "node_modules");
