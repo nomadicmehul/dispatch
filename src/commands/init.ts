@@ -36,7 +36,6 @@ export function registerInitCommand(program: Command) {
               message: "AI engine:",
               choices: [
                 { name: "Claude Code (recommended)", value: "claude" },
-                { name: "GitHub Models (GPT-4o, Claude, Gemini via GITHUB_TOKEN)", value: "github-models" },
                 { name: "Gemini (Google AI — uses GEMINI_API_KEY)", value: "gemini" },
               ],
               default: "claude",

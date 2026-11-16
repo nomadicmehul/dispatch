@@ -6,7 +6,7 @@ import { loadConfig, applyCliOverrides } from "../utils/config.js";
 import { getRepoInfo } from "../utils/git.js";
 import { GitHubClient } from "../github/client.js";
 import { ClaudeEngine } from "../engine/claude.js";
-import { GitHubModelsEngine } from "../engine/github-models.js";
+import { GITHUB_MODELS_RETIRED } from "../engine/github-models.js";
 import { GeminiEngine } from "../engine/gemini.js";
 import { runPipeline } from "../orchestrator/pipeline.js";
 import { log } from "../utils/logger.js";
@@ -72,17 +72,15 @@ export function registerRunCommand(program: Command) {
             maxTurns: config.maxTurnsPerIssue,
           });
         } else if (config.engine === "github-models") {
-          engine = new GitHubModelsEngine({
-            model: config.model,
-            maxTurns: config.maxTurnsPerIssue,
-          });
+          log.error(GITHUB_MODELS_RETIRED);
+          process.exit(1);
         } else if (config.engine === "gemini") {
           engine = new GeminiEngine({
             model: config.model === "sonnet" ? "gemini-2.5-pro" : config.model,
             maxTurns: config.maxTurnsPerIssue,
           });
         } else {
-          log.error(`Engine "${config.engine}" is not supported. Use "claude", "github-models", or "gemini".`);
+          log.error(`Engine "${config.engine}" is not supported. Use "claude" or "gemini".`);
           process.exit(1);
         }
 

@@ -236,3 +236,12 @@ ${CONFIDENCE_PROMPT}`;
     return { score: 5, uncertainties: ["Re-scoring not yet implemented"] };
   }
 }
+
+/**
+ * GitHub retired GitHub Models on 2026-07-30; its inference API no longer answers
+ * (https://github.blog/changelog/2026-07-30-github-models-is-now-retired/).
+ * The engine is kept for now so existing configs get a clear error instead of a crash.
+ */
+export const GITHUB_MODELS_RETIRED =
+  'GitHub Models was retired by GitHub on 2026-07-30, so the "github-models" engine no longer works. ' +
+  'Use the "claude" or "gemini" engine instead (set "engine" in .dispatchrc.json, or pass --engine).';

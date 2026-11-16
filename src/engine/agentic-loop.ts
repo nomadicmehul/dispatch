@@ -59,9 +59,11 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
       max_tokens: 16384,
     });
 
-    const choice = response.choices[0];
-    if (!choice) {
-      throw new Error(`No response from ${prefix} API`);
+    // Guard against non-completion bodies (e.g. a retired or misconfigured endpoint)
+    const choice = Array.isArray(response?.choices) ? response.choices[0] : undefined;
+    if (!choice?.message) {
+      const body = typeof response === "string" ? response : JSON.stringify(response);
+      throw new Error(`Unexpected response from ${prefix} API (no completion): ${String(body).slice(0, 200)}`);
     }
 
     const assistantMessage = choice.message;
