@@ -37,6 +37,20 @@ export interface IssueComment {
 }
 
 /** Context about the repository for the AI engine */
+/**
+ * Runs a program inside an isolation boundary: `command ...args <program> <program args>`.
+ * Used for sandboxing (see sandbox/srt.ts); engines and verify don't need to know which.
+ */
+export interface Launcher {
+  command: string;
+  /** Arguments placed before the program */
+  args: string[];
+  /** Added to the program's environment */
+  env?: Record<string, string>;
+  /** Claude config folder used inside the boundary, where native transcripts are written */
+  configDir?: string;
+}
+
 export interface RepoContext {
   owner: string;
   repo: string;
@@ -58,6 +72,8 @@ export interface RepoContext {
   repoBrief?: string;
   /** Other issues solved in the same run, on their own branches */
   siblings?: Array<{ number: number; title: string; classification?: string }>;
+  /** Run the agent through this launcher (sandbox mode) */
+  launcher?: Launcher;
 }
 
 /** Engine session metadata captured during a solve */
@@ -121,7 +137,7 @@ export interface AIEngine {
   repair?(issue: Issue, context: RepoContext, previous: SolveResult, feedback: string): Promise<SolveResult>;
 
   /** Find the engine's own on-disk transcript for a session ID, if it keeps one */
-  locateTranscript?(sessionId: string): Promise<string | null>;
+  locateTranscript?(sessionId: string, configDir?: string): Promise<string | null>;
 
   /** Generate a well-structured issue from a freeform description */
   createIssue(description: string, context: RepoContext): Promise<StructuredIssue>;

@@ -82,6 +82,12 @@ function printExplanation(record: SessionRecord, timeline: TimelineEntry[], dir:
     row("Diff", `${record.diff.files.length} files, +${record.diff.additions} −${record.diff.deletions}`);
   }
 
+  row(
+    "Sandbox",
+    record.sandbox
+      ? `${record.sandbox.mode}: network ${record.sandbox.allowedDomains.length} hosts, writes to the worktree only`
+      : "none (agent ran with the user's access)",
+  );
   if (record.repoBrief) {
     row("Brief", `repo brief from ${record.repoBrief.ref} (${record.repoBrief.chars} chars)`);
   }

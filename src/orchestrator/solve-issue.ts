@@ -12,6 +12,7 @@ import {
   git,
   stageChanges,
   stagedDiffStats,
+  secretsInStagedDiff,
   commitStaged,
   pushBranch,
   getDiffSummary,
@@ -36,6 +37,8 @@ import type { IssueSummary } from "../reporter/summary.js";
 import type { IssueTelemetry } from "../telemetry/collector.js";
 import { REPORT_TYPES, type SiblingIssue } from "../engine/base.js";
 import type { BranchChange } from "./overlap.js";
+import { prepareIssueSandbox, type IssueSandbox, type SandboxOptions } from "../sandbox/srt.js";
+import type { Launcher } from "../engine/types.js";
 
 export interface SolveIssueContext {
   config: DispatchConfig;
@@ -51,6 +54,8 @@ export interface SolveIssueContext {
   maxCostUsd?: number;
   /** Other issues solved in the same run */
   siblings?: SiblingIssue[];
+  /** Run the agent and its commands inside this sandbox (sandbox mode) */
+  sandbox?: SandboxOptions;
 }
 
 export interface IssueOutcome {
@@ -80,12 +85,13 @@ async function verifyWithRepairs(
   result: SolveResult,
   context: RepoContext,
   ctx: SolveIssueContext,
+  launcher?: Launcher,
 ): Promise<{ result: SolveResult; verify: VerifyOutcome }> {
   const { config, engine } = ctx;
   const command = ctx.verifyCommand!;
   const runAndRecord = async (repairs: number): Promise<VerifyOutcome> => {
     log.info(`[#${issue.number}] Verifying: ${chalk.cyan(command)}`);
-    const outcome = { ...(await runVerify(command, context.cwd, config.timeoutPerIssue)), repairs };
+    const outcome = { ...(await runVerify(command, context.cwd, config.timeoutPerIssue, launcher)), repairs };
     await appendTranscriptEvent(context.transcriptFile, "verify", {
       command,
       status: outcome.status,
@@ -125,11 +131,16 @@ async function verifyWithRepairs(
 }
 
 /** Save the session record and transcripts; push them to a ref when configured */
-async function finalizeRecord(record: SessionRecord, ctx: SolveIssueContext, result?: SolveResult): Promise<void> {
+async function finalizeRecord(
+  record: SessionRecord,
+  ctx: SolveIssueContext,
+  result?: SolveResult,
+  configDir?: string,
+): Promise<void> {
   const { config, engine, cwd } = ctx;
   try {
     const nativePath = result?.session?.nativeTranscriptPath
-      ?? (engine.locateTranscript ? await engine.locateTranscript(record.id) : null);
+      ?? (engine.locateTranscript ? await engine.locateTranscript(record.id, configDir) : null);
     if (nativePath) {
       await importNativeTranscript(nativePath, cwd, config.stateDir, record.id);
     }
@@ -194,13 +205,25 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
   let pr: { number: number; url: string } | undefined;
   let status: SessionRecord["status"] = "failed";
   let errorMsg: string | undefined;
+  let box: IssueSandbox | undefined;
 
   try {
     log.info(`[#${issue.number}] ${issue.title} (${classification})`);
     log.info(`[#${issue.number}] Creating worktree: ${chalk.cyan(branchName)}`);
     await createWorktree(worktreePath, branchName, config.baseBranch, cwd);
 
-    const prep = await prepareWorktree(worktreePath, cwd, config.setupCommand, config.timeoutPerIssue);
+    if (ctx.sandbox) {
+      box = await prepareIssueSandbox({
+        options: ctx.sandbox,
+        dir: join(cwd, config.stateDir, "sandbox", sessionId),
+        worktreePath,
+        repoRoot: cwd,
+        linkedTargets: [join(cwd, "node_modules")],
+      });
+      record.sandbox = box.record;
+    }
+
+    const prep = await prepareWorktree(worktreePath, cwd, config.setupCommand, config.timeoutPerIssue, box?.verify);
     if (prep.setup && prep.setup.exitCode !== 0) {
       log.warn(`[#${issue.number}] Setup command failed (exit ${prep.setup.exitCode}) — continuing`);
     }
@@ -219,6 +242,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
       allowedCommands: ctx.verifyCommand ? [ctx.verifyCommand] : [],
       repoBrief: ctx.repoBrief?.brief,
       siblings: ctx.siblings,
+      launcher: box?.agent,
     };
 
     await appendTranscriptEvent(transcriptFile, "solve", { engine: engine.name, model: config.model, issue: issue.number });
@@ -242,7 +266,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
     log.success(`[#${issue.number}] Solved in ${elapsed}s (self-assessed ${result.confidence}/10)`);
 
     if (ctx.verifyCommand && (await hasChanges(worktreePath, prep.linked))) {
-      ({ result, verify } = await verifyWithRepairs(issue, result, context, ctx));
+      ({ result, verify } = await verifyWithRepairs(issue, result, context, ctx, box?.verify));
     }
 
     const { staged, heldBack } = await stageChanges(worktreePath, prep.linked);
@@ -261,6 +285,11 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
         config,
       );
       result = { ...result, confidence: assessment.confidence, changedFiles: diff.files };
+
+      const leaked = await secretsInStagedDiff(worktreePath);
+      if (leaked.length > 0) {
+        throw new Error(`The change contains the value of ${leaked.join(", ")}; not committing or pushing it`);
+      }
 
       if (verify.status === "failed" && config.onVerifyFail === "skip") {
         throw new Error(`Verification failed (\`${verify.command}\`) — no PR opened (onVerifyFail: "skip")`);
@@ -320,7 +349,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
     record.uncertainties = result?.uncertainties;
 
     if (keepRecords) {
-      await finalizeRecord(record, ctx, result);
+      await finalizeRecord(record, ctx, result, box?.agent.configDir);
     }
 
     // Always clean up the worktree; keep the branch only when a PR uses it

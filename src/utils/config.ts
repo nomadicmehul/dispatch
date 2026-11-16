@@ -55,6 +55,16 @@ export interface DispatchConfig {
   provenance: "local" | "ref" | "off";
   /** Give every agent session a shared brief of the repository (layout, languages, scripts) */
   repoBrief: boolean;
+  /** Run each agent and its verify/setup commands inside a sandbox: "off", or "srt" (Anthropic's sandbox-runtime) */
+  sandbox: "off" | "srt";
+  /** Path or name of the srt binary */
+  srtPath: string;
+  /** Extra hosts sandboxed sessions may reach, besides the Claude API and package registries */
+  sandboxAllowedDomains: string[];
+  /** Extra files or folders sandboxed sessions may read */
+  sandboxAllowRead: string[];
+  /** Extra files or folders sandboxed sessions may write */
+  sandboxAllowWrite: string[];
   /** Enable anonymous telemetry (default: true). Set to false to opt out of remote analytics. */
   telemetry: boolean;
   /** PostHog host URL for self-hosted instances (default: https://app.posthog.com) */
@@ -90,6 +100,11 @@ const DEFAULT_CONFIG: DispatchConfig = {
   maxCostPerRun: 0,
   provenance: "local",
   repoBrief: true,
+  sandbox: "off",
+  srtPath: "srt",
+  sandboxAllowedDomains: [],
+  sandboxAllowRead: [],
+  sandboxAllowWrite: [],
   telemetry: true,
   posthogHost: "https://app.posthog.com",
   // Write-only key — safe to embed. Can only send events, not read data.
@@ -185,6 +200,7 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
   if (options.maxCostPerIssue !== undefined) merged.maxCostPerIssue = spendCap("--max-cost-per-issue", options.maxCostPerIssue);
   // Commander defaults --no-repo-brief to true, so only an explicit false overrides the config file
   if (options.repoBrief === false) merged.repoBrief = false;
+  if (options.sandbox === true) merged.sandbox = "srt";
   if (options.provenance !== undefined) {
     const val = String(options.provenance);
     if (val === "local" || val === "ref" || val === "off") {

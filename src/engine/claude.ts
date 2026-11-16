@@ -9,6 +9,7 @@ import type {
   RepoContext,
   SolveResult,
   StructuredIssue,
+  Launcher,
 } from "./types.js";
 import {
   buildIssuePrompt,
@@ -49,6 +50,8 @@ export interface ClaudeRunOptions {
   maxBudgetUsd?: number;
   /** Keep the session on disk so it can be resumed (default: true) */
   persist?: boolean;
+  /** Run claude through this launcher, e.g. inside a sandbox */
+  launcher?: Launcher;
 }
 
 /** Outcome of one `claude -p` run, taken from its final `result` event */
@@ -88,7 +91,9 @@ export function shellNote(allowedCommands: string[] = []): string {
  * credentials when Bedrock or Vertex is selected). GITHUB_TOKEN never reaches the agent.
  */
 export function claudeEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const keep = [/^ANTHROPIC_/, /^CLAUDE_CODE_/];
+  // Non-secret CLAUDE_CODE_* settings pass anyway; of the secret-looking ones, only the
+  // subscription token is kept (a parent session's internal tokens are not)
+  const keep = [/^ANTHROPIC_/, /^CLAUDE_CODE_OAUTH_TOKEN$/];
   if (env.CLAUDE_CODE_USE_BEDROCK) keep.push(/^AWS_/);
   if (env.CLAUDE_CODE_USE_VERTEX) keep.push(/^GOOGLE_APPLICATION_CREDENTIALS$/);
 
@@ -135,8 +140,9 @@ export function buildClaudeArgs(model: string, defaultMaxTurns: number, options:
 /** Locate Claude Code's own transcript for a session (~/.claude/projects/<project>/<id>.jsonl) */
 export async function findClaudeTranscript(
   sessionId: string,
-  configDir: string = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
+  configDir?: string,
 ): Promise<string | null> {
+  configDir = configDir || process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
   const projects = join(configDir, "projects");
   let dirs: string[];
   try {
@@ -254,9 +260,10 @@ export class ClaudeEngine implements AIEngine {
     }
 
     return new Promise<ClaudeRun>((resolve, reject) => {
-      const child = spawn("claude", args, {
+      const launcher = options.launcher;
+      const child = spawn(launcher ? launcher.command : "claude", launcher ? [...launcher.args, "claude", ...args] : args, {
         cwd: options.cwd || process.cwd(),
-        env: claudeEnv(),
+        env: { ...claudeEnv(), ...launcher?.env },
         stdio: ["pipe", "pipe", "pipe"],
       });
 
@@ -370,7 +377,12 @@ export class ClaudeEngine implements AIEngine {
   }
 
   /** Convert a finished run into a SolveResult with session metadata */
-  private async toSolveResult(run: ClaudeRun, issueNumber: number, fallbackSessionId?: string): Promise<SolveResult> {
+  private async toSolveResult(
+    run: ClaudeRun,
+    issueNumber: number,
+    fallbackSessionId?: string,
+    configDir?: string,
+  ): Promise<SolveResult> {
     if (run.isError && !EARLY_STOP_SUBTYPES.has(run.subtype ?? "")) {
       throw new Error(`Claude Code reported an error: ${(run.text || run.subtype || "unknown").substring(0, 300)}`);
     }
@@ -386,7 +398,7 @@ export class ClaudeEngine implements AIEngine {
       id: sessionId,
       costUsd: run.costUsd,
       turns: run.turns,
-      nativeTranscriptPath: sessionId ? (await findClaudeTranscript(sessionId)) ?? undefined : undefined,
+      nativeTranscriptPath: sessionId ? (await findClaudeTranscript(sessionId, configDir)) ?? undefined : undefined,
     };
     return result;
   }
@@ -427,9 +439,10 @@ ${CONFIDENCE_PROMPT}`;
       sessionId: context.sessionId,
       maxBudgetUsd: context.maxCostUsd,
       allowedTools: solveTools(context.allowedCommands),
+      launcher: context.launcher,
     });
 
-    return this.toSolveResult(run, issue.number, context.sessionId);
+    return this.toSolveResult(run, issue.number, context.sessionId, context.launcher?.configDir);
   }
 
   async investigate(issue: Issue, context: RepoContext): Promise<SolveResult> {
@@ -457,9 +470,10 @@ ${CONFIDENCE_PROMPT}`;
       resume: sessionId,
       maxBudgetUsd: context.maxCostUsd,
       allowedTools: solveTools(context.allowedCommands),
+      launcher: context.launcher,
     });
 
-    const result = await this.toSolveResult(run, issue.number, sessionId);
+    const result = await this.toSolveResult(run, issue.number, sessionId, context.launcher?.configDir);
 
     // A resumed run reports the session's cumulative cost; older CLIs report only the new run
     const session = result.session!;
@@ -530,7 +544,7 @@ ${CONFIDENCE_PROMPT}`;
   }
 
   /** Find this engine's native transcript for a session, e.g. after a timeout */
-  async locateTranscript(sessionId: string): Promise<string | null> {
-    return findClaudeTranscript(sessionId);
+  async locateTranscript(sessionId: string, configDir?: string): Promise<string | null> {
+    return findClaudeTranscript(sessionId, configDir);
   }
 }
