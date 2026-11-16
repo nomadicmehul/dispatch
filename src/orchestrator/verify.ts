@@ -107,6 +107,7 @@ export function runCommand(command: string, cwd: string, timeoutMs: number, laun
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
+      launcher?.stop?.().catch(() => {});
       try {
         process.kill(-child.pid!, "SIGKILL");
       } catch {

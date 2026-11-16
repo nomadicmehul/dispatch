@@ -37,7 +37,7 @@ import type { IssueSummary } from "../reporter/summary.js";
 import type { IssueTelemetry } from "../telemetry/collector.js";
 import { REPORT_TYPES, type SiblingIssue } from "../engine/base.js";
 import type { BranchChange } from "./overlap.js";
-import { prepareIssueSandbox, type IssueSandbox, type SandboxOptions } from "../sandbox/srt.js";
+import type { IssueSandbox, SandboxBackend } from "../sandbox/index.js";
 import type { Launcher } from "../engine/types.js";
 
 export interface SolveIssueContext {
@@ -55,7 +55,7 @@ export interface SolveIssueContext {
   /** Other issues solved in the same run */
   siblings?: SiblingIssue[];
   /** Run the agent and its commands inside this sandbox (sandbox mode) */
-  sandbox?: SandboxOptions;
+  sandbox?: SandboxBackend;
 }
 
 export interface IssueOutcome {
@@ -213,8 +213,8 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
     await createWorktree(worktreePath, branchName, config.baseBranch, cwd);
 
     if (ctx.sandbox) {
-      box = await prepareIssueSandbox({
-        options: ctx.sandbox,
+      box = await ctx.sandbox.prepareIssue({
+        sessionId,
         dir: join(cwd, config.stateDir, "sandbox", sessionId),
         worktreePath,
         repoRoot: cwd,

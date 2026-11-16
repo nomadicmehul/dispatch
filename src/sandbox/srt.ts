@@ -3,7 +3,17 @@ import { access, mkdir, realpath, writeFile } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { promisify } from "node:util";
-import type { Launcher } from "../engine/types.js";
+import {
+  AGENT_DOMAINS,
+  REGISTRY_DOMAINS,
+  CREDENTIAL_HINT,
+  type IssueSandbox,
+  type PrepareIssueParams,
+  type SandboxBackend,
+} from "./types.js";
+
+export { AGENT_DOMAINS, REGISTRY_DOMAINS } from "./types.js";
+export type { IssueSandbox, SandboxRecord } from "./types.js";
 
 const exec = promisify(execFile);
 
@@ -14,20 +24,6 @@ const exec = promisify(execFile);
  * to an allowlist. Claude Code's own sandbox setting covers only its Bash tool; wrapping the
  * process covers its file tools, hooks and MCP servers too.
  */
-
-/** Hosts an agent session needs: the Claude API plus the common package registries */
-export const AGENT_DOMAINS = ["api.anthropic.com"];
-export const REGISTRY_DOMAINS = [
-  "registry.npmjs.org",
-  "registry.yarnpkg.com",
-  "pypi.org",
-  "files.pythonhosted.org",
-  "proxy.golang.org",
-  "sum.golang.org",
-  "index.crates.io",
-  "static.crates.io",
-  "rubygems.org",
-];
 
 /** Toolchain folders under $HOME that commands may need to read (only those that exist are used) */
 const TOOLCHAIN_DIRS = [
@@ -42,22 +38,6 @@ export interface SandboxOptions {
   extraDomains?: string[];
   extraRead?: string[];
   extraWrite?: string[];
-}
-
-/** What a sandboxed issue was allowed, for the session record */
-export interface SandboxRecord {
-  mode: "srt";
-  allowedDomains: string[];
-  allowRead: string[];
-  allowWrite: string[];
-}
-
-export interface IssueSandbox {
-  /** Runs `claude` inside the agent policy */
-  agent: Launcher;
-  /** Runs the setup and verify commands inside the verify policy (no Claude API) */
-  verify: Launcher;
-  record: SandboxRecord;
 }
 
 const exists = (path: string) => access(path).then(() => true, () => false);
@@ -123,10 +103,7 @@ export async function sandboxPreflight(
     );
   }
   if (!env.CLAUDE_CODE_OAUTH_TOKEN && !env.ANTHROPIC_API_KEY) {
-    return (
-      "Sandbox mode keeps Claude away from your keychain and ~/.claude, so it needs a credential in the environment. " +
-      "Run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN (or set ANTHROPIC_API_KEY)."
-    );
+    return CREDENTIAL_HINT;
   }
   return null;
 }
@@ -235,4 +212,29 @@ export async function prepareIssueSandbox(params: {
       allowWrite: [...new Set(agentPolicy.allowWrite)],
     },
   };
+}
+
+/** The sandbox-runtime backend: OS-level isolation, no containers */
+export class SrtSandbox implements SandboxBackend {
+  readonly name = "srt" as const;
+
+  constructor(private readonly options: SandboxOptions) {}
+
+  preflight(engine: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+    return sandboxPreflight({ srtPath: this.options.srtPath, engine }, env);
+  }
+
+  async start(): Promise<void> {}
+
+  prepareIssue(params: PrepareIssueParams): Promise<IssueSandbox> {
+    return prepareIssueSandbox({
+      options: this.options,
+      dir: params.dir,
+      worktreePath: params.worktreePath,
+      repoRoot: params.repoRoot,
+      linkedTargets: params.linkedTargets,
+    });
+  }
+
+  async stop(): Promise<void> {}
 }

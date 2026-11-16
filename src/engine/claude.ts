@@ -335,6 +335,8 @@ export class ClaudeEngine implements AIEngine {
       const timer = setTimeout(() => {
         settled = true;
         child.kill("SIGTERM");
+        // Killing a `docker run` client doesn't stop its container
+        launcher?.stop?.().catch(() => {});
         // Give it a moment, then force-kill if still alive
         setTimeout(() => {
           try { child.kill("SIGKILL"); } catch { /* already dead */ }
@@ -353,8 +355,10 @@ export class ClaudeEngine implements AIEngine {
         } else if (code === 0) {
           resolve({ text: texts.join("\n"), sessionId, isError: false });
         } else {
-          const lastLine = redactSecrets(stderrTail.trim().split("\n").pop() || "", secrets);
-          reject(new Error(`Claude process exited with code ${code}${lastLine ? `: ${lastLine}` : ""}`));
+          // The cause is often above the last line (e.g. docker prints the error, then a usage hint)
+          const lines = stderrTail.split("\n").map((l) => l.trim()).filter(Boolean).slice(-3);
+          const detail = redactSecrets(lines.join(" | "), secrets);
+          reject(new Error(`Claude process exited with code ${code}${detail ? `: ${detail}` : ""}`));
         }
       });
 

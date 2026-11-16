@@ -1,4 +1,5 @@
 import { mkdir, readdir, readFile, writeFile, access, rm } from "node:fs/promises";
+import type { SandboxRecord } from "../sandbox/types.js";
 import { join } from "node:path";
 import { git, gitRemote, writeFilesToRef, type DiffStats } from "../utils/git.js";
 import { log } from "../utils/logger.js";
@@ -46,7 +47,7 @@ export interface SessionRecord {
   /** The shared repository brief the agent received, if any */
   repoBrief?: { ref: string; chars: number };
   /** Sandbox the session ran in, and what it was allowed */
-  sandbox?: { mode: "srt"; allowedDomains: string[]; allowRead: string[]; allowWrite: string[] };
+  sandbox?: SandboxRecord;
   commitSha?: string;
   prNumber?: number;
   prUrl?: string;

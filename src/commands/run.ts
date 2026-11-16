@@ -44,7 +44,7 @@ export function registerRunCommand(program: Command) {
     .option("--max-cost-per-issue <usd>", "Spend cap per issue in USD", parseFloat)
     .option("--provenance <mode>", "Session records: local, ref (also push to refs/dispatch/sessions), or off")
     .option("--no-repo-brief", "Don't give agents the shared repository brief")
-    .option("--sandbox", "Run each agent and its tests inside Anthropic's sandbox-runtime (srt)")
+    .option("--sandbox [backend]", "Run each agent and its tests in a sandbox: srt (default, Anthropic's sandbox-runtime) or docker")
     .option("--no-telemetry", "Disable anonymous telemetry for this run")
     .action(async (options) => {
       try {
@@ -67,7 +67,8 @@ export function registerRunCommand(program: Command) {
         // Create engine
         let engine;
         if (config.engine === "claude") {
-          if (!options.dryRun) await assertClaudeInstalled();
+          // With the Docker sandbox, claude runs inside the image, so the host doesn't need it
+          if (!options.dryRun && config.sandbox !== "docker") await assertClaudeInstalled();
           engine = new ClaudeEngine({
             model: config.model,
             maxTurns: config.maxTurnsPerIssue,
