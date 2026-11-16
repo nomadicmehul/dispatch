@@ -5,6 +5,7 @@ import type { Assessment } from "../orchestrator/scorer.js";
 import { LANE_LABELS } from "../orchestrator/scorer.js";
 import type { VerifyOutcome } from "../orchestrator/verify.js";
 import { log } from "../utils/logger.js";
+import type { SandboxRecord } from "../sandbox/types.js";
 
 /** Evidence and provenance shown in the PR body, when available */
 export interface PRDetails {
@@ -12,6 +13,8 @@ export interface PRDetails {
   verify?: VerifyOutcome;
   /** Files Dispatch did not commit because they look like secrets */
   heldBack?: string[];
+  /** Sandbox the agent ran in */
+  sandbox?: SandboxRecord;
   session?: {
     id: string;
     engine: string;
@@ -72,6 +75,16 @@ export function buildPRBody(
       body += `- ${u}\n`;
     }
     body += `\n`;
+  }
+
+  if (details.sandbox) {
+    const box = details.sandbox;
+    body += `<details><summary>🔒 Sandbox: ${box.mode}${box.image ? ` (<code>${box.image}</code>)` : ""}`;
+    body += `${box.blocked?.length ? `, ${box.blocked.length} blocked` : ", nothing blocked"}</summary>\n\n`;
+    body += `- **Network:** ${box.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n`;
+    body += `- **Writes:** the worktree and the session's Claude config only\n`;
+    if (box.blocked?.length) body += `- **Blocked:** ${box.blocked.map((d) => `\`${d}\``).join(", ")}\n`;
+    body += `\n</details>\n\n`;
   }
 
   if (details.heldBack && details.heldBack.length > 0) {

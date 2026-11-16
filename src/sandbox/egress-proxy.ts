@@ -22,11 +22,24 @@ export function hostAllowed(host: string, allowList: string[]): boolean {
   });
 }
 
+/**
+ * The session a request belongs to. Each session's proxy URL carries its session ID as the
+ * username (http://<session>@proxy:port), which clients send as Proxy-Authorization.
+ * Used only to attribute log lines, never to decide anything.
+ */
+export function sessionOf(header: string | string[] | undefined): string {
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = value?.match(/^Basic\s+(\S+)/i);
+  if (!match) return "-";
+  const user = Buffer.from(match[1], "base64").toString("utf-8").split(":")[0];
+  return /^[\w-]{1,64}$/.test(user) ? user : "-";
+}
+
 /** Ports a sandboxed client may reach through the proxy */
 const ALLOWED_PORTS = new Set([80, 443]);
 
-function deny(socket: { end: (data: string) => void }, host: string, reason: string) {
-  console.log(`BLOCKED ${host} (${reason})`);
+function deny(socket: { end: (data: string) => void }, host: string, reason: string, session: string) {
+  console.log(`BLOCKED ${host} (${reason}) session=${session}`);
   socket.end(`HTTP/1.1 403 Forbidden\r\nX-Proxy-Error: blocked-by-dispatch\r\nContent-Length: 0\r\n\r\n`);
 }
 
@@ -42,7 +55,7 @@ export function startProxy(port: number, allowList: string[], label: string) {
     }
     const target = Number(url.port || 80);
     if (!hostAllowed(url.hostname, allowList) || !ALLOWED_PORTS.has(target)) {
-      console.log(`BLOCKED ${url.hostname}:${target} (${label})`);
+      console.log(`BLOCKED ${url.hostname}:${target} (${label}) session=${sessionOf(req.headers["proxy-authorization"])}`);
       res.writeHead(403, { "X-Proxy-Error": "blocked-by-dispatch" }).end();
       return;
     }
@@ -61,10 +74,12 @@ export function startProxy(port: number, allowList: string[], label: string) {
   server.on("connect", (req: IncomingMessage, client, head: Buffer) => {
     const [host, portText] = (req.url ?? "").split(/:(?=\d+$)/);
     const target = Number(portText || 443);
+    const session = sessionOf(req.headers["proxy-authorization"]);
     if (!hostAllowed(host, allowList) || !ALLOWED_PORTS.has(target)) {
-      deny(client, `${host}:${target}`, label);
+      deny(client, `${host}:${target}`, label, session);
       return;
     }
+    console.log(`ALLOWED ${host}:${target} (${label}) session=${session}`);
     const upstream = connect(target, host, () => {
       client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
       if (head.length > 0) upstream.write(head);

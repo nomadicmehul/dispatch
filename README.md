@@ -135,7 +135,8 @@ dispatch schedule --auth claude-code      # Claude Pro/Max subscription token in
 dispatch schedule --auth gemini           # uses GEMINI_API_KEY secret (default: gemini-2.5-pro)
 dispatch schedule --auth gemini --model gemini-3-pro-preview  # Gemini 3 series model
 dispatch schedule --stdout                # print workflow YAML without writing file
-dispatch schedule --sandbox               # run agents inside sandbox-runtime on the runner (claude engine)
+dispatch schedule --no-sandbox            # run agents without a sandbox (the default for Claude is --sandbox docker)
+dispatch schedule --sandbox               # use sandbox-runtime on the runner instead of Docker
 ```
 
 **What happens:**
@@ -308,7 +309,12 @@ Each issue gets a fresh `CLAUDE_CONFIG_DIR`, so your hooks, MCP servers and memo
 - **srt:** `npm install -g @anthropic-ai/sandbox-runtime` (Node 22.12+). On Linux also install `bubblewrap`, `socat` and `ripgrep`.
 - **Docker:** start Docker. On macOS, native packages in your `node_modules` (built for macOS) won't load in the Linux container; set `"setupCommand": "npm ci"` so dependencies are installed inside it.
 - Give Claude a credential in the environment. The sandbox keeps it away from your keychain: run `claude setup-token` and export `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY`.
-- In GitHub Actions, `dispatch schedule --sandbox docker` needs nothing extra, because the runners have Docker. `dispatch schedule --sandbox` generates the srt install step. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
+- In GitHub Actions, workflows from `dispatch schedule` use the Docker sandbox by default for Claude. GitHub's runners have Docker, so it needs nothing extra, and the runner doesn't need Claude Code installed. `--sandbox` switches to srt and generates its install step; `--no-sandbox` turns sandboxing off.
+
+**Evidence in the PR**
+- Each sandboxed PR shows a 🔒 block with the backend, the allowed hosts, and any host the session tried to reach and was refused. With Docker, refused connections are traced to the issue that made them.
+- A PR whose agent or tests hit a blocked host can't land in *Ready to merge*: reaching for unlisted hosts can be a sign of prompt injection. The evidence says why.
+- `dispatch explain` and the morning report (🔒) show the same. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
 
 **Limits**
 - Sandbox mode fails closed: it refuses to start without `srt` or a running Docker, without an environment credential, or with the Gemini engine, which runs its tools inside Dispatch's own process.

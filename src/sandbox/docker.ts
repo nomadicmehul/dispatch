@@ -99,6 +99,16 @@ export function containerArgs(params: {
   return args;
 }
 
+/** Blocked `host:port` entries for one session from the proxy's log */
+export function parseBlocked(log: string, sessionId: string): string[] {
+  const hosts = new Set<string>();
+  for (const line of log.split("\n")) {
+    const match = line.match(/^BLOCKED (\S+) \(\w+\) session=([\w-]+)$/);
+    if (match && match[2] === sessionId) hosts.add(match[1]);
+  }
+  return [...hosts];
+}
+
 export class DockerSandbox implements SandboxBackend {
   readonly name = "docker" as const;
   private readonly docker: string;
@@ -195,10 +205,14 @@ export class DockerSandbox implements SandboxBackend {
     throw new Error("The sandbox egress proxy did not start");
   }
 
-  /** Hosts the proxy refused during this run, for the session records */
-  async blockedHosts(): Promise<string[]> {
+  /**
+   * Hosts the proxy refused for one session (its agent and its commands). Connections from
+   * clients that don't send the session username can't be attributed and are left out.
+   */
+  async blockedHosts(sessionId: string): Promise<string[]> {
+    if (!this.started) return [];
     const { stdout } = await this.run(["logs", this.proxy]).catch(() => ({ stdout: "" }));
-    return [...new Set(stdout.split("\n").filter((l) => l.startsWith("BLOCKED ")).map((l) => l.slice(8)))];
+    return parseBlocked(stdout, sessionId);
   }
 
   async prepareIssue(params: PrepareIssueParams): Promise<IssueSandbox> {
@@ -234,7 +248,7 @@ export class DockerSandbox implements SandboxBackend {
       args: containerArgs({
         ...base,
         mounts: mounts([configDir]),
-        proxy: `http://${this.proxy}:${AGENT_PORT}`,
+        proxy: `http://${params.sessionId}@${this.proxy}:${AGENT_PORT}`,
         env: { CLAUDE_CONFIG_DIR: configDir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
         passEnv: CLAUDE_CREDENTIAL_VARS,
       }),
@@ -246,7 +260,7 @@ export class DockerSandbox implements SandboxBackend {
       args: containerArgs({
         ...base,
         mounts: mounts(),
-        proxy: `http://${this.proxy}:${VERIFY_PORT}`,
+        proxy: `http://${params.sessionId}@${this.proxy}:${VERIFY_PORT}`,
         env: {},
         passEnv: [],
       }),

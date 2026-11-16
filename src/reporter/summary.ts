@@ -27,6 +27,8 @@ export interface IssueSummary {
   skipDetail?: string;
   /** Other PRs from the same run that change the same files */
   overlaps?: string[];
+  /** Sandbox backend the agent ran in */
+  sandbox?: string;
 }
 
 export interface RunSummary {
@@ -86,6 +88,7 @@ function evidenceLine(issue: IssueSummary): string {
   if (issue.verify === "skipped") parts.push("not verified");
   if (issue.diff) parts.push(`+${issue.diff.additions} −${issue.diff.deletions}`);
   if (issue.costUsd !== undefined) parts.push(formatCost(issue.costUsd));
+  if (issue.sandbox) parts.push(`🔒 ${issue.sandbox}`);
   return parts.join(" · ");
 }
 

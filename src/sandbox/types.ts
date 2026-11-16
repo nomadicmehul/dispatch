@@ -8,6 +8,8 @@ export interface SandboxRecord {
   allowedDomains: string[];
   allowRead: string[];
   allowWrite: string[];
+  /** Hosts the sandbox refused for this session (docker), e.g. "example.com:443" */
+  blocked?: string[];
 }
 
 export interface IssueSandbox {
@@ -37,6 +39,8 @@ export interface SandboxBackend {
   /** Run-wide setup (e.g. image, network, proxy) */
   start(): Promise<void>;
   prepareIssue(params: PrepareIssueParams): Promise<IssueSandbox>;
+  /** Hosts refused for one session so far, when the backend can tell */
+  blockedHosts?(sessionId: string): Promise<string[]>;
   /** Run-wide teardown; safe to call more than once */
   stop(): Promise<void>;
 }
