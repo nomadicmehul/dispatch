@@ -49,6 +49,8 @@ export interface Launcher {
   env?: Record<string, string>;
   /** Claude config folder used inside the boundary, where native transcripts are written */
   configDir?: string;
+  /** Stop whatever the launcher started (e.g. its containers) when a run times out */
+  stop?: () => Promise<void>;
 }
 
 export interface RepoContext {

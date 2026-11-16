@@ -55,6 +55,7 @@ dispatch run --verify-command "make check"   # how to test changes (default: aut
 dispatch run --max-cost 5             # stop starting new issues after $5 of spend
 dispatch run --provenance ref         # also push session records to refs/dispatch/sessions/*
 dispatch run --sandbox                # run each agent and its tests inside a sandbox (see Sandbox)
+dispatch run --sandbox docker         # the same, in Docker containers
 ```
 
 **What happens:**
@@ -245,8 +246,9 @@ Dispatch reads `.dispatchrc.json` from your repo root:
 | `maxCostPerIssue` | Spend cap per issue in USD, enforced by Claude Code (`0` = none) | `0` |
 | `maxCostPerRun` | Spend cap per run in USD; no new issues start once reached (`0` = none) | `0` |
 | `provenance` | Session records: `"local"` (`.dispatch/sessions`), `"ref"` (also pushed to `refs/dispatch/sessions/*`), `"off"` | `"local"` |
-| `sandbox` | `"srt"` runs each agent and its setup/verify commands inside Anthropic's sandbox-runtime ([Sandbox](#sandbox)); `"off"` runs them with your access | `"off"` |
+| `sandbox` | `"srt"` (Anthropic's sandbox-runtime) or `"docker"` runs each agent and its setup/verify commands in a sandbox ([Sandbox](#sandbox)); `"off"` runs them with your access | `"off"` |
 | `srtPath` | Path or name of the `srt` binary | `"srt"` |
+| `dockerImage` | Image for `--sandbox docker`: your toolchain plus the `claude` CLI. Empty = build `dispatch-sandbox:node22` | `""` |
 | `sandboxAllowedDomains` | Extra hosts sandboxed sessions may reach (besides the Claude API and package registries) | `[]` |
 | `sandboxAllowRead` / `sandboxAllowWrite` | Extra files or folders sandboxed sessions may read / write | `[]` |
 | `repoBrief` | Give every agent session a shared brief of the repo (built from the base branch, committed files only, ~4k chars max). Disable per run with `--no-repo-brief` | `true` |
@@ -278,7 +280,19 @@ Dispatch hands issue text to an agent that can edit code and run your tests, so 
 
 ## Sandbox
 
-`dispatch run --sandbox` (or `"sandbox": "srt"`) runs each agent, and its setup and verify commands, inside [Anthropic's sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) (`srt`): Seatbelt on macOS, bubblewrap on Linux. The whole `claude` process is wrapped, so its file tools, hooks and MCP servers are inside the boundary too. Claude Code's own sandbox setting covers only its Bash tool.
+Sandboxing is off by default. Turn it on to run each agent, and its setup and verify commands, inside an isolation boundary. There are two backends:
+
+| | `--sandbox` (srt) | `--sandbox docker` |
+|---|---|---|
+| How | [Anthropic's sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime): Seatbelt on macOS, bubblewrap on Linux | One throwaway container per agent or command, on an internal network whose only way out is an egress proxy |
+| Isolation | OS-level, shared kernel | Container (inside Docker Desktop's VM on macOS); runs as you, no capabilities |
+| Sees | worktree + toolchains under `$HOME` + per-issue Claude config | worktree + per-issue Claude config + `node_modules` (read-only), mounted at the same paths |
+| Needs | `npm i -g @anthropic-ai/sandbox-runtime` (Node 22.12+); on Linux also bubblewrap, socat, ripgrep | A running Docker. The default image (`dispatch-sandbox:node22`: Node 22, git, Claude Code; about 1 GB) is built on first use, or set `dockerImage` to your own image with `claude` installed |
+| Tools | whatever is installed on your machine | whatever is in the image |
+
+Either way, the whole `claude` process is inside, so its file tools, hooks and MCP servers are too. Claude Code's own sandbox setting covers only its Bash tool.
+
+The table below describes the srt backend. The Docker backend applies the same network rules through its proxy, and mounts nothing else.
 
 | Inside the sandbox | Agent | Setup & verify commands |
 |---|---|---|
@@ -289,12 +303,14 @@ Dispatch hands issue text to an agent that can edit code and run your tests, so 
 Each issue gets a fresh `CLAUDE_CONFIG_DIR`, so your hooks, MCP servers and memory don't load, and nothing is written to your real `~/.claude`. Session records and `dispatch explain` show the policy.
 
 **Setup**
-- Install it: `npm install -g @anthropic-ai/sandbox-runtime` (Node 22.12+). On Linux also install `bubblewrap`, `socat` and `ripgrep`.
+- **srt:** `npm install -g @anthropic-ai/sandbox-runtime` (Node 22.12+). On Linux also install `bubblewrap`, `socat` and `ripgrep`.
+- **Docker:** start Docker. On macOS, native packages in your `node_modules` (built for macOS) won't load in the Linux container; set `"setupCommand": "npm ci"` so dependencies are installed inside it.
 - Give Claude a credential in the environment. The sandbox keeps it away from your keychain: run `claude setup-token` and export `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY`.
-- In GitHub Actions, `dispatch schedule --sandbox` generates the install step. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
+- In GitHub Actions, `dispatch schedule --sandbox docker` needs nothing extra, because the runners have Docker. `dispatch schedule --sandbox` generates the srt install step. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
 
 **Limits**
-- Sandbox mode fails closed: it refuses to start without `srt`, without an environment credential, or with the Gemini engine, which runs its tools inside Dispatch's own process.
+- Sandbox mode fails closed: it refuses to start without `srt` or a running Docker, without an environment credential, or with the Gemini engine, which runs its tools inside Dispatch's own process.
+- If a Docker run is killed hard, remove what it left with `docker rm -f $(docker ps -aq --filter label=dispatch=sandbox)` and `docker network prune --filter label=dispatch=sandbox`. Ctrl-C cleans up by itself.
 - macOS and Linux only; on Windows, use WSL2.
 - `srt` is a beta research preview.
 - On Linux a denied folder is replaced by an empty, throwaway one: writes to it succeed inside the sandbox and are discarded.
@@ -491,7 +507,8 @@ The engine adapter pattern makes adding new AI backends trivial — implement th
 - [x] Verification gate with agent repair, evidence-based scoring, review lanes
 - [x] Session provenance (`dispatch explain`, `dispatch resume`, commit trailers, session refs)
 - [x] Opt-in sandbox for agents and their tests (sandbox-runtime, macOS and Linux)
-- [ ] Docker backend for the sandbox (reuse `devcontainer.json`)
+- [x] Docker backend for the sandbox (`--sandbox docker`)
+- [ ] Build the Docker sandbox image from `devcontainer.json`
 - [ ] Gemini: sandbox hardening, transcripts, cost tracking, repair
 - [ ] Codex engine
 - [ ] Learn from PR outcomes (which issue types and engines actually get merged)

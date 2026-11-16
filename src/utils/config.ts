@@ -55,8 +55,10 @@ export interface DispatchConfig {
   provenance: "local" | "ref" | "off";
   /** Give every agent session a shared brief of the repository (layout, languages, scripts) */
   repoBrief: boolean;
-  /** Run each agent and its verify/setup commands inside a sandbox: "off", or "srt" (Anthropic's sandbox-runtime) */
-  sandbox: "off" | "srt";
+  /** Run each agent and its verify/setup commands inside a sandbox: "off", "srt" (Anthropic's sandbox-runtime) or "docker" */
+  sandbox: "off" | "srt" | "docker";
+  /** Image for the docker sandbox: node (or your toolchain) plus the claude CLI. Empty = build dispatch-sandbox:node22 */
+  dockerImage: string;
   /** Path or name of the srt binary */
   srtPath: string;
   /** Extra hosts sandboxed sessions may reach, besides the Claude API and package registries */
@@ -101,6 +103,7 @@ const DEFAULT_CONFIG: DispatchConfig = {
   provenance: "local",
   repoBrief: true,
   sandbox: "off",
+  dockerImage: "",
   srtPath: "srt",
   sandboxAllowedDomains: [],
   sandboxAllowRead: [],
@@ -200,7 +203,13 @@ export function applyCliOverrides(config: DispatchConfig, options: Record<string
   if (options.maxCostPerIssue !== undefined) merged.maxCostPerIssue = spendCap("--max-cost-per-issue", options.maxCostPerIssue);
   // Commander defaults --no-repo-brief to true, so only an explicit false overrides the config file
   if (options.repoBrief === false) merged.repoBrief = false;
+  // --sandbox alone means srt; --sandbox docker picks the backend
   if (options.sandbox === true) merged.sandbox = "srt";
+  else if (typeof options.sandbox === "string") {
+    const val = options.sandbox;
+    if (val === "srt" || val === "docker") merged.sandbox = val;
+    else throw new ConfigError(`Invalid --sandbox "${val}". Use --sandbox (srt) or --sandbox docker.`);
+  }
   if (options.provenance !== undefined) {
     const val = String(options.provenance);
     if (val === "local" || val === "ref" || val === "off") {

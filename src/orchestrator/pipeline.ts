@@ -12,7 +12,7 @@ import { selectIssues, parseDispatchedIssueNumbers, type Selection, type Skipped
 import { resolveVerifyCommand } from "./verify.js";
 import { buildRunBrief } from "./repo-brief.js";
 import { solveIssue } from "./solve-issue.js";
-import { sandboxPreflight, type SandboxOptions } from "../sandbox/srt.js";
+import { createSandbox, describeSandbox } from "../sandbox/index.js";
 import { detectOverlaps, describeOverlap, overlapComment, type BranchChange } from "./overlap.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { cleanupAllWorktrees } from "../utils/worktree.js";
@@ -240,17 +240,10 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   }
 
   // Sandbox mode fails closed: if it can't run, nothing runs unsandboxed instead
-  let sandbox: SandboxOptions | undefined;
-  if (config.sandbox === "srt") {
-    const problem = await sandboxPreflight({ srtPath: config.srtPath, engine: engine.name });
+  const sandbox = createSandbox(config);
+  if (sandbox) {
+    const problem = await sandbox.preflight(engine.name);
     if (problem) throw new Error(problem);
-    sandbox = {
-      srtPath: config.srtPath,
-      extraDomains: config.sandboxAllowedDomains,
-      extraRead: config.sandboxAllowRead,
-      extraWrite: config.sandboxAllowWrite,
-    };
-    log.info(`Sandbox: ${chalk.cyan("srt")}. Agents read only their worktree and toolchains, and reach only the Claude API and package registries`);
   }
 
   if ((config.maxCostPerRun > 0 || config.maxCostPerIssue > 0) && engine.name !== "claude") {
@@ -267,46 +260,63 @@ export async function runPipeline(options: PipelineOptions): Promise<RunSummary>
   // Clean up any leftover worktrees from a previous crashed run
   await cleanupAllWorktrees(cwd, config.stateDir);
 
-  await Promise.all(selection.selected.map(async (issue) => {
-    await semaphore.acquire();
-    try {
-      const remaining = config.maxCostPerRun > 0 ? config.maxCostPerRun - spent : undefined;
-      if (remaining !== undefined && remaining <= 0) {
-        issueSummaries.push(skippedSummary({
-          issue,
-          reason: "budget-exhausted",
-          detail: `run spend cap of $${config.maxCostPerRun.toFixed(2)} reached`,
-        }));
-        return;
+  // Start the sandbox (image, network, proxy) and always stop it, also on Ctrl-C
+  const stopOnSignal = () => {
+    sandbox?.stop().finally(() => process.exit(130));
+  };
+  if (sandbox) {
+    await sandbox.start();
+    process.once("SIGINT", stopOnSignal);
+    log.info(`Sandbox: ${chalk.cyan(describeSandbox(sandbox))}`);
+  }
+
+  try {
+    await Promise.all(selection.selected.map(async (issue) => {
+      await semaphore.acquire();
+      try {
+        const remaining = config.maxCostPerRun > 0 ? config.maxCostPerRun - spent : undefined;
+        if (remaining !== undefined && remaining <= 0) {
+          issueSummaries.push(skippedSummary({
+            issue,
+            reason: "budget-exhausted",
+            detail: `run spend cap of $${config.maxCostPerRun.toFixed(2)} reached`,
+          }));
+          return;
+        }
+
+        const caps = [config.maxCostPerIssue > 0 ? config.maxCostPerIssue : undefined, remaining]
+          .filter((n): n is number => n !== undefined);
+
+        const outcome = await solveIssue(issue, {
+          config,
+          engine,
+          github,
+          cwd,
+          verifyCommand,
+          repoBrief: brief,
+          readiness: selection.readiness.get(issue.number),
+          maxCostUsd: caps.length > 0 ? Math.min(...caps) : undefined,
+          sandbox,
+          siblings: selection.selected
+            .filter((other) => other.number !== issue.number)
+            .map((other) => ({ number: other.number, title: other.title, classification: other.classification })),
+        });
+
+        spent += outcome.costUsd;
+        telemetry.recordIssue(outcome.telemetry);
+        issueSummaries.push(outcome.summary);
+        if (outcome.pr) prsCreated.push({ ...outcome.pr, issueNumber: issue.number });
+        if (outcome.change) changes.push(outcome.change);
+      } finally {
+        semaphore.release();
       }
-
-      const caps = [config.maxCostPerIssue > 0 ? config.maxCostPerIssue : undefined, remaining]
-        .filter((n): n is number => n !== undefined);
-
-      const outcome = await solveIssue(issue, {
-        config,
-        engine,
-        github,
-        cwd,
-        verifyCommand,
-        repoBrief: brief,
-        readiness: selection.readiness.get(issue.number),
-        maxCostUsd: caps.length > 0 ? Math.min(...caps) : undefined,
-        sandbox,
-        siblings: selection.selected
-          .filter((other) => other.number !== issue.number)
-          .map((other) => ({ number: other.number, title: other.title, classification: other.classification })),
-      });
-
-      spent += outcome.costUsd;
-      telemetry.recordIssue(outcome.telemetry);
-      issueSummaries.push(outcome.summary);
-      if (outcome.pr) prsCreated.push({ ...outcome.pr, issueNumber: issue.number });
-      if (outcome.change) changes.push(outcome.change);
-    } finally {
-      semaphore.release();
+    }));
+  } finally {
+    if (sandbox) {
+      process.removeListener("SIGINT", stopOnSignal);
+      await sandbox.stop();
     }
-  }));
+  }
 
   // 6. Flag PRs from this run that change the same files
   if (changes.length > 1) {
