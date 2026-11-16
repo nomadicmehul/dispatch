@@ -67,7 +67,8 @@ export function registerRunCommand(program: Command) {
         // Create engine
         let engine;
         if (config.engine === "claude") {
-          if (!options.dryRun) await assertClaudeInstalled();
+          // With the Docker sandbox, claude runs inside the image, so the host doesn't need it
+          if (!options.dryRun && config.sandbox !== "docker") await assertClaudeInstalled();
           engine = new ClaudeEngine({
             model: config.model,
             maxTurns: config.maxTurnsPerIssue,
