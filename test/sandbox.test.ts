@@ -199,3 +199,21 @@ describe("git repos", () => {
     await removeWorktree(resumePath, repo);
   });
 });
+
+describe("schedule --sandbox", () => {
+  it("installs sandbox-runtime, uses Node 22 and passes --sandbox", async () => {
+    const { generateWorkflow, SRT_VERSION } = await import("../src/commands/schedule.js");
+    for (const auth of ["api-key", "claude-code"] as const) {
+      const workflow = generateWorkflow("0 2 * * *", 3, false, [], auth, undefined, { sandbox: true });
+      assert.match(workflow, /node-version: "22"/, auth);
+      assert.match(workflow, /apt-get install -y -qq bubblewrap socat ripgrep/, auth);
+      assert.match(workflow, /apparmor_parser -R \/etc\/apparmor\.d\/bwrap-userns-restrict/, auth);
+      assert.ok(workflow.includes(`@anthropic-ai/sandbox-runtime@${SRT_VERSION}`), auth);
+      assert.match(workflow, /--sandbox \\/, auth);
+    }
+    const plain = generateWorkflow("0 2 * * *", 3, false, [], "api-key");
+    assert.doesNotMatch(plain, /sandbox-runtime|--sandbox/);
+    assert.match(plain, /node-version: "20"/);
+    assert.match(plain, /Allow GitHub Actions to create and approve pull requests/);
+  });
+});
