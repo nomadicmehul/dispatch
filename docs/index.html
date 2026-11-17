@@ -4,13 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dispatch — AI-Powered Batch Issue Solver for GitHub</title>
-  <meta name="description" content="Dispatch solves your GitHub issues in batch using AI. Run it at night, review pull requests in the morning." />
-  <meta name="keywords" content="github, cli, ai, automation, issues, pull requests, claude, developer tools" />
+  <meta name="description" content="Dispatch solves your GitHub issues in batch with AI agents, checks their work, and sorts the pull requests by evidence. Run it at night, review in the morning." />
+  <meta name="keywords" content="github, cli, ai, automation, issues, pull requests, claude, claude code, sandbox, code review, developer tools" />
   <meta property="og:title" content="Dispatch — Solve GitHub Issues While You Sleep" />
-  <meta property="og:description" content="AI-powered CLI that automatically solves GitHub issues in batch, creates branches, and opens pull requests." />
+  <meta property="og:description" content="AI agents solve your GitHub issues overnight, in sandboxes. Dispatch runs your tests and sorts every PR by the evidence behind it." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://dispatchai.dev/" />
-  <meta property="og:image" content="https://nomadicmehul.github.io/dispatch/og-image.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
@@ -908,10 +907,10 @@
       </div>
       <div class="hero-badge">
         <span class="dot"></span>
-        v0.1.0-beta &mdash; Now available on npm
+        v0.2.0-beta &mdash; Now available on npm
       </div>
       <h1>Solve GitHub Issues<br/><span class="gradient">While You Sleep</span></h1>
-      <p>Dispatch is an AI-powered CLI that automatically solves your GitHub issues in batch, creates branches, and opens pull requests &mdash; all while you rest.</p>
+      <p>Dispatch is a CLI that hands your GitHub issues to AI agents overnight, each in its own worktree and, if you like, its own sandbox. It runs your tests, and every pull request arrives sorted by the evidence behind it.</p>
       <div class="hero-actions">
         <a href="https://github.com/nomadicmehul/dispatch" target="_blank" class="btn btn-primary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
@@ -938,20 +937,20 @@
 
       <div class="stats-row">
         <div class="stat">
-          <div class="stat-num">6</div>
-          <div class="stat-label">Issue Types</div>
+          <div class="stat-num">3</div>
+          <div class="stat-label">Review Lanes</div>
         </div>
         <div class="stat">
-          <div class="stat-num">10+</div>
-          <div class="stat-label">Issues per Run</div>
+          <div class="stat-num">2</div>
+          <div class="stat-label">Sandbox Backends</div>
         </div>
         <div class="stat">
-          <div class="stat-num">3x</div>
-          <div class="stat-label">Parallel Workers</div>
+          <div class="stat-num">4</div>
+          <div class="stat-label">Ways to Run Claude</div>
         </div>
         <div class="stat">
-          <div class="stat-num">0</div>
-          <div class="stat-label">Manual Effort</div>
+          <div class="stat-num">1</div>
+          <div class="stat-label">Session Record per PR</div>
         </div>
       </div>
     </div>
@@ -961,23 +960,23 @@
   <section id="how-it-works">
     <div class="container fade-in">
       <span class="section-label">How It Works</span>
-      <h2 class="section-title">Three steps. Zero effort.</h2>
-      <p class="section-sub">Dispatch automates the entire issue-solving pipeline from classification to pull request.</p>
+      <h2 class="section-title">Three steps. You stay in control.</h2>
+      <p class="section-sub">Dispatch automates the pipeline from triage to pull request, and shows its work at every step.</p>
       <div class="workflow-grid">
         <div class="workflow-card">
           <div class="workflow-step">1</div>
           <h3>Run Before Bed</h3>
-          <p>Execute <code style="color:var(--accent);">dispatch run</code> in your project directory. Dispatch fetches open issues, classifies them by type, and prioritizes by labels, reactions, and age.</p>
+          <p>Run <code style="color:var(--accent);">dispatch run</code>, or schedule it in GitHub Actions. Dispatch picks the issues that are ready, says why it skipped the rest, then classifies and prioritizes them by labels and reactions.</p>
         </div>
         <div class="workflow-card">
           <div class="workflow-step">2</div>
-          <h3>AI Solves Issues</h3>
-          <p>Each issue gets an isolated git worktree. Claude Code analyzes code, implements fixes, writes tests, and commits changes &mdash; processing multiple issues in parallel.</p>
+          <h3>Agents Solve, Dispatch Checks</h3>
+          <p>Each issue gets its own git worktree, optionally inside a sandbox. Claude Code makes the change; Dispatch runs your tests and hands any failure back to the agent for a repair.</p>
         </div>
         <div class="workflow-card">
           <div class="workflow-step">3</div>
-          <h3>Review PRs at Morning</h3>
-          <p>Wake up to a summary report with all results. High-confidence solutions become regular PRs; uncertain ones are marked as drafts for your careful review.</p>
+          <h3>Review by Evidence</h3>
+          <p>Wake up to a review queue: <strong>Ready to merge</strong>, <strong>Needs eyes</strong>, and <strong>Drafts</strong>. Every PR lists the evidence behind its score and links to the session that produced it.</p>
         </div>
       </div>
     </div>
@@ -987,53 +986,53 @@
   <section id="features">
     <div class="container fade-in">
       <span class="section-label">Features</span>
-      <h2 class="section-title">Built for developer productivity</h2>
-      <p class="section-sub">Every feature is designed to let AI handle the grunt work while you stay in control.</p>
+      <h2 class="section-title">Built so you can trust what it ships</h2>
+      <p class="section-sub">AI does the grunt work. Dispatch checks it, and tells you why each pull request deserves your attention.</p>
       <div class="features-grid">
         <div class="feature-card">
-          <span class="feature-icon">🧠</span>
-          <h3>Smart Classification</h3>
-          <p>Automatically categorizes issues into 6 types: bug fixes, features, investigations, documentation, audits, and refactors &mdash; each with tailored AI strategies.</p>
+          <span class="feature-icon">🧭</span>
+          <h3>Readiness Triage</h3>
+          <p>Scores how well each issue describes the work and skips the vague ones, telling you what's missing. Fix the issue instead of reviewing a guessed PR. <code style="color:var(--accent);">--dry-run</code> shows the plan.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🎯</span>
-          <h3>Confidence Scoring</h3>
-          <p>AI self-assesses each solution on a 1-10 scale. High-confidence PRs go straight through; low-confidence ones become drafts for manual review.</p>
+          <span class="feature-icon">✅</span>
+          <h3>Verified, Not Guessed</h3>
+          <p>Runs your test command after every change. When tests fail, the output goes back to the agent for a repair before any pull request opens.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">⚡</span>
-          <h3>Parallel Processing</h3>
-          <p>Process multiple issues concurrently with configurable parallelism. Each issue gets an isolated git worktree for safe, conflict-free development.</p>
+          <span class="feature-icon">🚦</span>
+          <h3>Evidence-Based Review Lanes</h3>
+          <p>Scores come from what actually happened (tests passed, tests added, diff size), not just the agent's opinion of its own work. Each PR lands in the lane it earned.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔒</span>
-          <h3>Safety First</h3>
-          <p>Dry-run mode previews what would happen without making changes. Draft PRs, confidence thresholds, and timeouts keep everything under control.</p>
+          <h3>Sandboxed Agents</h3>
+          <p>Opt in to run each agent and its tests in Anthropic's sandbox-runtime or in their own Docker container: they see only their worktree and reach only the model API and package registries. Blocked connections show up in the PR.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">📊</span>
-          <h3>Morning Reports</h3>
-          <p>Beautiful summary reports show solved vs. failed issues, PR links, confidence scores, and files changed &mdash; everything you need at a glance.</p>
+          <span class="feature-icon">🔑</span>
+          <h3>Credentials Stay Outside</h3>
+          <p>With Docker, a gateway adds Claude's credential outside the agent's container. Your GitHub token never reaches an agent, and files that look like secrets are held back from commits.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🏷️</span>
-          <h3>Label-Based Priority</h3>
-          <p>Respects P0-P3 priority labels, weighs emoji reactions, and considers issue age to process the most important issues first.</p>
+          <span class="feature-icon">🛡️</span>
+          <h3>Trust Filter</h3>
+          <p>Issues and comments from people outside the project never reach an agent's prompt, unless a maintainer approves the issue with the <code style="color:var(--accent);">dispatch:ready</code> label.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🛠️</span>
-          <h3>Issue Creator</h3>
-          <p>Create well-structured GitHub issues from simple text descriptions or through an interactive guided interview &mdash; powered by AI formatting.</p>
+          <span class="feature-icon">🧾</span>
+          <h3>Session Provenance</h3>
+          <p>Every PR links its session: model, cost, transcript and evidence. Commit trailers point back to it; <code style="color:var(--accent);">dispatch explain</code> shows how a PR was made, and <code style="color:var(--accent);">dispatch resume</code> picks up where the agent stopped.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">⚙️</span>
-          <h3>Fully Configurable</h3>
-          <p>Fine-tune with <code style="color:var(--accent);">.dispatchrc.json</code> &mdash; control models, concurrency, timeouts, branch prefixes, label filters, and more.</p>
+          <span class="feature-icon">⚡</span>
+          <h3>Parallel and Conflict-Aware</h3>
+          <p>Solves several issues at once, each in its own worktree. Dispatch flags PRs from the same run that touch the same files, and nightly runs skip issues already in progress.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🔌</span>
-          <h3>Multi-Engine Support</h3>
-          <p>Pluggable AI engine architecture. Ships with Claude Code and Gemini &mdash; choose the engine that fits your workflow.</p>
+          <span class="feature-icon">☁️</span>
+          <h3>Your Model, Your Cloud</h3>
+          <p>Claude Code through the Anthropic API, Amazon Bedrock, Google Cloud Vertex AI or Microsoft Foundry, so billing and access stay in your account. A Gemini engine is available as an experiment.</p>
         </div>
       </div>
     </div>
@@ -1043,61 +1042,72 @@
   <section id="commands">
     <div class="container fade-in">
       <span class="section-label">CLI Commands</span>
-      <h2 class="section-title">Six commands, infinite productivity</h2>
-      <p class="section-sub">Everything you need to manage issues with AI, from your terminal.</p>
+      <h2 class="section-title">Eight commands, one review queue</h2>
+      <p class="section-sub">Everything you need to hand issues to AI and review what comes back, from your terminal.</p>
       <div class="commands-grid">
         <div class="command-card">
           <div class="command-name">dispatch run</div>
-          <p>The powerhouse. Fetches issues, classifies them, spins up AI workers, and opens pull requests &mdash; all in one command.</p>
+          <p>The powerhouse. Picks the issues that are ready, runs an agent on each, verifies the result, and opens pull requests in review lanes.</p>
           <div class="command-flags">
             <span class="flag">--dry-run</span>
-            <span class="flag">--engine</span>
+            <span class="flag">--sandbox</span>
             <span class="flag">--label</span>
             <span class="flag">--max-issues</span>
+            <span class="flag">--concurrency</span>
+            <span class="flag">--max-cost</span>
             <span class="flag">--draft</span>
             <span class="flag">--model</span>
-            <span class="flag">--concurrency</span>
-            <span class="flag">--base-branch</span>
-            <span class="flag">--no-telemetry</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch status</div>
+          <p>The morning review queue: PRs grouped into Ready to merge, Needs eyes and Drafts, with confidence, test result, diff size and cost, plus why anything failed or was skipped.</p>
+          <div class="command-flags">
+            <span class="flag">--json</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch explain</div>
+          <p>How a PR was made: the evidence, the cost, and what the agent did. Takes an issue number, PR number or session ID.</p>
+          <div class="command-flags">
+            <span class="flag">--transcript</span>
+            <span class="flag">--json</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch resume</div>
+          <p>Continue a Dispatch session interactively in Claude Code, on its PR branch, to take a change the rest of the way.</p>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch schedule</div>
+          <p>Generate a GitHub Actions workflow for nightly runs. Agents run in the Docker sandbox by default.</p>
+          <div class="command-flags">
+            <span class="flag">--time</span>
+            <span class="flag">--cron</span>
+            <span class="flag">--auth</span>
+            <span class="flag">--sandbox</span>
+            <span class="flag">--no-sandbox</span>
+            <span class="flag">--label</span>
+          </div>
+        </div>
+        <div class="command-card">
+          <div class="command-name">dispatch init</div>
+          <p>Set up Dispatch in a repo: creates your <code style="color:var(--accent);">.dispatchrc.json</code> and the ⚡ dispatch label that marks Dispatch's work.</p>
+          <div class="command-flags">
+            <span class="flag">--yes</span>
           </div>
         </div>
         <div class="command-card">
           <div class="command-name">dispatch create</div>
-          <p>Create perfectly structured GitHub issues from text descriptions or interactive prompts. AI formats them professionally.</p>
+          <p>Turn a short description or an interactive interview into a well-structured GitHub issue, ready for an agent.</p>
           <div class="command-flags">
             <span class="flag">--interactive</span>
             <span class="flag">--no-post</span>
           </div>
         </div>
         <div class="command-card">
-          <div class="command-name">dispatch status</div>
-          <p>View a formatted summary of your last run &mdash; solved issues, failed attempts, PR links, and confidence breakdowns.</p>
-          <div class="command-flags">
-            <span class="flag">--json</span>
-          </div>
-        </div>
-        <div class="command-card">
-          <div class="command-name">dispatch init</div>
-          <p>Set up Dispatch in any repo with an interactive wizard or sensible defaults. Creates your <code style="color:var(--accent);">.dispatchrc.json</code> config.</p>
-          <div class="command-flags">
-            <span class="flag">--yes</span>
-          </div>
-        </div>
-        <div class="command-card">
-          <div class="command-name">dispatch schedule</div>
-          <p>Generate a GitHub Actions workflow for automated nightly runs. Supports multiple auth methods and AI engines.</p>
-          <div class="command-flags">
-            <span class="flag">--time</span>
-            <span class="flag">--cron</span>
-            <span class="flag">--auth</span>
-            <span class="flag">--draft</span>
-            <span class="flag">--label</span>
-            <span class="flag">--model</span>
-          </div>
-        </div>
-        <div class="command-card">
           <div class="command-name">dispatch stats</div>
-          <p>View historical statistics across all runs &mdash; success rates, solve times, engine usage, confidence distributions, and recent activity.</p>
+          <p>History across runs: success rates, solve times, engines and confidence.</p>
           <div class="command-flags">
             <span class="flag">--json</span>
             <span class="flag">--recent</span>
@@ -1181,13 +1191,13 @@
             </li>
             <li>
               <span class="vision-check">&#10003;</span>
-              <span><strong>For teams</strong> &mdash; automate the routine so your engineers stay focused on high-impact work. Review AI-generated PRs instead of writing them from scratch.</span>
+              <span><strong>For teams</strong> &mdash; automate the routine so your engineers stay focused on high-impact work. Review AI-generated PRs by their evidence, with agents sandboxed and models billed to your own cloud.</span>
             </li>
           </ul>
         </div>
         <div class="vision-graphic">
           <div class="big-quote">&ldquo;Run it at night.<br/><span class="gradient">Review PRs in the morning.</span>&rdquo;</div>
-          <p>That's the Dispatch philosophy. We're building toward a future where AI is your most reliable team member &mdash; one that never sleeps, never complains, and always ships clean code.</p>
+          <p>That's the Dispatch philosophy. We're building toward a future where AI is your most reliable team member: one that never sleeps, and always shows its work, so reviewing it is fast.</p>
         </div>
       </div>
     </div>
@@ -1204,43 +1214,49 @@
           <div class="roadmap-dot done"></div>
           <div class="roadmap-phase">Shipped</div>
           <h4>Core Engine &amp; CLI</h4>
-          <p>Batch issue solving, smart classification, confidence scoring, parallel processing, morning reports, and configurable pipelines.</p>
+          <p>Batch issue solving in isolated worktrees, classification, parallel runs, scheduled runs in GitHub Actions, and run history with <code style="color:var(--accent);">dispatch stats</code>.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot done"></div>
-          <div class="roadmap-phase">Shipped</div>
-          <h4>Multi-Engine Support</h4>
-          <p>Claude Code and Gemini engines &mdash; choose the AI that works best for your codebase and budget.</p>
+          <div class="roadmap-phase">Shipped in v0.2</div>
+          <h4>Evidence Before Merge</h4>
+          <p>Readiness triage, the trust filter, verification with agent repair, evidence-based scoring, and the Ready to merge / Needs eyes / Drafts review queue.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot done"></div>
-          <div class="roadmap-phase">Shipped</div>
-          <h4>Scheduled Runs &amp; Telemetry</h4>
-          <p>GitHub Actions workflow generation for nightly runs. Anonymous analytics and <code style="color:var(--accent);">dispatch stats</code> for tracking performance across runs.</p>
+          <div class="roadmap-phase">Shipped in v0.2</div>
+          <h4>Session Provenance</h4>
+          <p>A session record for every PR, commit trailers that link back to it, <code style="color:var(--accent);">dispatch explain</code> and <code style="color:var(--accent);">dispatch resume</code>.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-phase">Shipped in v0.2</div>
+          <h4>Sandboxed Agents</h4>
+          <p>sandbox-runtime and Docker backends, a credential gateway that keeps Claude's credential outside the agent's container, blocked connections as evidence, and Claude through Bedrock, Vertex AI or Foundry.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot active"></div>
           <div class="roadmap-phase">Next Up</div>
-          <h4>Notifications &amp; Integrations</h4>
-          <p>Slack, Discord, and Teams notifications when runs complete.</p>
+          <h4>More Engines</h4>
+          <p>A Codex engine, and the Gemini engine rebuilt on Gemini CLI, inside the same sandbox, verification and evidence pipeline.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot"></div>
           <div class="roadmap-phase">Future</div>
-          <h4>Issue Decomposition</h4>
-          <p>Automatically break large, complex issues into smaller sub-tasks that AI can solve independently and more reliably.</p>
+          <h4>Team Context</h4>
+          <p>Shared, versioned context for teams where several developers and agents work on the same repository, so agents know what's already in flight.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot"></div>
           <div class="roadmap-phase">Future</div>
-          <h4>Learning from Reviews</h4>
-          <p>Dispatch learns from your PR review feedback to improve future solutions &mdash; getting smarter with every cycle.</p>
+          <h4>Learning from Outcomes</h4>
+          <p>Learn which issue types and engines actually get merged, and use your review feedback to improve future runs.</p>
         </div>
         <div class="roadmap-item">
           <div class="roadmap-dot"></div>
           <div class="roadmap-phase">Future</div>
-          <h4>Web Dashboard</h4>
-          <p>A visual dashboard to browse run history, track trends, see confidence distributions, and manage your Dispatch workflow.</p>
+          <h4>Notifications &amp; Dashboard</h4>
+          <p>Slack, Discord and Teams notifications when a run completes, and a web view of run history.</p>
         </div>
       </div>
     </div>
@@ -1314,14 +1330,17 @@
           <div><span class="qs-comment"># Install globally (beta)</span></div>
           <div><span class="qs-cmd">npm install -g dispatch-ai@beta</span></div>
           <br/>
-          <div><span class="qs-comment"># Initialize in your repo</span></div>
+          <div><span class="qs-comment"># Initialize in your repo (config + the ⚡ dispatch label)</span></div>
           <div><span class="qs-cmd">cd your-project && dispatch init</span></div>
           <br/>
-          <div><span class="qs-comment"># Preview what Dispatch would do</span></div>
+          <div><span class="qs-comment"># Preview: what's ready, what's skipped, and why</span></div>
           <div><span class="qs-cmd">dispatch run --dry-run</span></div>
           <br/>
-          <div><span class="qs-comment"># Let it rip</span></div>
-          <div><span class="qs-cmd">dispatch run</span></div>
+          <div><span class="qs-comment"># Run, each agent in its own container</span></div>
+          <div><span class="qs-cmd">dispatch run --sandbox docker</span></div>
+          <br/>
+          <div><span class="qs-comment"># In the morning: your review queue</span></div>
+          <div><span class="qs-cmd">dispatch status</span></div>
         </div>
       </div>
     </div>
@@ -1335,7 +1354,7 @@
           <div class="logo-icon">⚡</div>
           Dispatch
         </div>
-        <p>AI-powered batch issue solver for GitHub. Run it at night, review PRs in the morning.</p>
+        <p>AI agents for your GitHub issues, with the evidence to review them fast. Run it at night, review PRs in the morning.</p>
       </div>
       <div class="footer-links">
         <h5>Project</h5>
@@ -1402,21 +1421,20 @@
 
     // Terminal typing animation
     const lines = [
-      { text: '$ dispatch run', cls: 't-cmd', delay: 60 },
+      { text: '$ dispatch run --sandbox docker', cls: 't-cmd', delay: 60 },
       { text: '', cls: '', delay: 400 },
-      { text: '⚡ Dispatch v0.1.0-beta', cls: 't-brand', delay: 30 },
+      { text: '⚡ Dispatch v0.2.0-beta', cls: 't-brand', delay: 30 },
       { text: '', cls: '', delay: 200 },
-      { text: '  Fetching open issues...', cls: 't-dim', delay: 40 },
-      { text: '  Found 8 issues, classified 6 solvable', cls: 't-dim', delay: 40 },
+      { text: '  9 open issues: 5 ready, 4 skipped (2 vague, 1 untrusted, 1 in progress)', cls: 't-dim', delay: 30 },
+      { text: '  🔒 Each agent runs in its own container', cls: 't-dim', delay: 30 },
       { text: '', cls: '', delay: 300 },
-      { text: '  ✓ #42 Fix auth token refresh     [confidence: 9/10]', cls: 't-success', delay: 35 },
-      { text: '  ✓ #38 Add retry logic to API      [confidence: 8/10]', cls: 't-success', delay: 35 },
-      { text: '  ✓ #35 Update README examples       [confidence: 10/10]', cls: 't-success', delay: 35 },
-      { text: '  ✓ #31 Refactor logger module       [confidence: 7/10]', cls: 't-warn', delay: 35 },
-      { text: '  ✓ #29 Add input validation         [confidence: 8/10]', cls: 't-success', delay: 35 },
-      { text: '  ✓ #27 Fix race condition in cache  [confidence: 6/10]', cls: 't-warn', delay: 35 },
+      { text: '  ✓ #42 Fix auth token refresh     npm test ✓   ready to merge', cls: 't-success', delay: 30 },
+      { text: '  ✓ #38 Add retry logic to API     npm test ✓   ready to merge', cls: 't-success', delay: 30 },
+      { text: '  ✓ #35 Update README examples     docs only    needs eyes', cls: 't-warn', delay: 30 },
+      { text: '  ✓ #31 Refactor logger module     repaired ✓   needs eyes', cls: 't-warn', delay: 30 },
+      { text: '  ✗ #27 Fix race in cache          npm test ✗   draft', cls: 't-dim', delay: 30 },
       { text: '', cls: '', delay: 300 },
-      { text: '  6 PRs created (4 ready, 2 draft)', cls: 't-brand', delay: 30 },
+      { text: '  📊 5 PRs: 2 ready to merge, 2 need eyes, 1 draft', cls: 't-brand', delay: 30 },
       { text: '  Run complete. Sweet dreams! 🌙', cls: 't-success', delay: 30 },
     ];
 
