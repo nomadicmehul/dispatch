@@ -4,8 +4,9 @@
  * containers reach the outside only through it, and it lets through only the listed hosts.
  *
  * Two listeners, one per policy: AGENT_PORT (Claude API + registries) and VERIFY_PORT
- * (registries only). Standalone on purpose: Node built-ins only, so it runs from a plain
- * node image with this file mounted read-only.
+ * (registries only), plus the credential gateway on GATEWAY_PORT. Standalone on purpose:
+ * Node built-ins only (and gateway.js next to it), so it runs from a plain node image with
+ * this folder mounted read-only.
  */
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -13,6 +14,9 @@ import { connect, isIP } from "node:net";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { authorizeRequest, gatewayConfigFromEnv, gatewayRoute, type GatewayConfig } from "./gateway.js";
+
+export { SENTINEL_API_KEY, SENTINEL_OAUTH_TOKEN, injectCredentials } from "./gateway.js";
 
 /** Whether `host` matches the allowlist: exact names, or `*.example.com` for subdomains */
 export function hostAllowed(host: string, allowList: string[]): boolean {
@@ -128,70 +132,74 @@ export function startProxy(port: number, allowList: string[], label: string, ses
   return server;
 }
 
-/** The placeholder credentials sandboxed agents get; the gateway swaps in the real ones */
-export const SENTINEL_API_KEY = "sk-ant-api03-dispatch-sandbox-placeholder-not-a-real-key";
-export const SENTINEL_OAUTH_TOKEN = "sk-ant-oat01-dispatch-sandbox-placeholder-not-a-real-token";
-
-/** Request headers with the placeholder credential replaced by the real one */
-export function injectCredentials(
-  headers: Record<string, string | string[] | undefined>,
-  creds: { apiKey?: string; oauthToken?: string },
-): Record<string, string | string[]> {
-  const out: Record<string, string | string[]> = {};
-  for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined) continue;
-    const lower = name.toLowerCase();
-    if (["host", "connection", "proxy-authorization", "proxy-connection", "keep-alive", "transfer-encoding"].includes(lower)) continue;
-    out[lower] = value;
-  }
-  if (out["x-api-key"] !== undefined) {
-    if (creds.apiKey) out["x-api-key"] = creds.apiKey;
-    else delete out["x-api-key"];
-  }
-  if (typeof out["authorization"] === "string" && /^Bearer\s/i.test(out["authorization"])) {
-    if (creds.oauthToken) out["authorization"] = `Bearer ${creds.oauthToken}`;
-    else delete out["authorization"];
-  }
-  return out;
-}
-
 /**
- * Anthropic gateway: plain HTTP on the sandbox network, forwarding to api.anthropic.com
- * with the real credential. Agents get ANTHROPIC_BASE_URL=http://<proxy>:<port>/<token>
- * and a placeholder key, so the real key or OAuth token never enters their container.
- * The session token in the path is checked like the egress proxy's.
+ * Credential gateway: plain HTTP on the sandbox network. Agents get a base URL of
+ * http://<proxy>:<port>/<token> and no real credential; the gateway checks the session
+ * token in the path like the egress proxy does, sends the request to the provider's model
+ * API (see gatewayRoute) and adds the real credential on the way.
  */
-export function startGateway(
-  port: number,
-  creds: { apiKey?: string; oauthToken?: string },
-  sessionsDir?: string,
-  upstream = "api.anthropic.com",
-) {
+export function startGateway(port: number, cfg: GatewayConfig, sessionsDir?: string) {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const match = (req.url ?? "").match(/^\/([a-f0-9]{32})(\/.*)?$/);
     const session = match ? sessionOf(`Basic ${Buffer.from(`${match[1]}:`).toString("base64")}`, sessionsDir) : null;
     if (!match || session === null) {
-      console.log(`BLOCKED ${upstream}:443 (gateway) session=-`);
+      console.log(`BLOCKED ${cfg.provider}-gateway (gateway) session=-`);
       res.writeHead(407, { "X-Proxy-Error": "unknown-session" }).end();
       return;
     }
+    const method = req.method ?? "GET";
     const path = match[2] || "/";
-    const upstreamReq = httpsRequest(
-      { host: upstream, port: 443, path, method: req.method, headers: { ...injectCredentials(req.headers, creds), host: upstream } },
-      (upRes) => {
-        console.log(`GATEWAY ${req.method} ${path.split("?")[0]} ${upRes.statusCode} session=${session}`);
-        res.writeHead(upRes.statusCode ?? 502, upRes.headers);
-        upRes.pipe(res);
-      },
-    );
-    upstreamReq.on("error", (err) => {
-      console.log(`GATEWAY ${req.method} ${path.split("?")[0]} error=${(err as NodeJS.ErrnoException).code ?? "?"} session=${session}`);
-      if (!res.headersSent) res.writeHead(502);
-      res.end();
+    const route = gatewayRoute(cfg, method, path);
+    if (!route) {
+      // Not the model API: logged like a blocked host, so it counts against the PR
+      const shown = path.split("?")[0].replace(/[^\w./:@-]/g, "_").slice(0, 120);
+      console.log(`BLOCKED ${cfg.provider}-gateway${shown} (gateway) session=${session}`);
+      res.writeHead(403, { "X-Proxy-Error": "blocked-by-dispatch" }).end();
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", async () => {
+      const body = Buffer.concat(chunks);
+      const label = `${method} ${route.path.split("?")[0]}`;
+      let headers: Record<string, string | string[]>;
+      try {
+        headers = await authorizeRequest(cfg, route, method, req.headers, body);
+      } catch (err) {
+        console.log(`GATEWAY ${label} error=credentials (${(err as Error).message}) session=${session}`);
+        res.writeHead(502, { "X-Proxy-Error": "gateway-credentials" }).end();
+        return;
+      }
+      if (body.length > 0) headers["content-length"] = String(body.length);
+
+      const target = cfg.upstream ? new URL(cfg.upstream) : undefined;
+      const send = target?.protocol === "http:" ? httpRequest : httpsRequest;
+      const upstreamReq = send(
+        {
+          host: target?.hostname ?? route.host,
+          port: target ? Number(target.port || (target.protocol === "http:" ? 80 : 443)) : 443,
+          path: route.path,
+          method,
+          headers,
+          servername: target ? undefined : route.host,
+        },
+        (upRes) => {
+          console.log(`GATEWAY ${label} ${upRes.statusCode} session=${session}`);
+          // Passed through as is: Bedrock streams a binary event stream that must keep its content-type
+          res.writeHead(upRes.statusCode ?? 502, upRes.headers);
+          upRes.pipe(res);
+        },
+      );
+      upstreamReq.on("error", (err) => {
+        console.log(`GATEWAY ${label} error=${(err as NodeJS.ErrnoException).code ?? "?"} session=${session}`);
+        if (!res.headersSent) res.writeHead(502);
+        res.end();
+      });
+      upstreamReq.end(body);
     });
-    req.pipe(upstreamReq);
   });
-  server.listen(port, "0.0.0.0", () => console.log(`listening gateway on ${port}`));
+  server.listen(port, "0.0.0.0", () => console.log(`listening gateway (${cfg.provider}) on ${port}`));
   return server;
 }
 
@@ -202,10 +210,6 @@ if (isMain) {
   startProxy(Number(process.env.AGENT_PORT ?? 3128), list("AGENT_DOMAINS"), "agent", sessions);
   startProxy(Number(process.env.VERIFY_PORT ?? 3129), list("VERIFY_DOMAINS"), "verify", sessions);
   if (process.env.GATEWAY_PORT) {
-    startGateway(
-      Number(process.env.GATEWAY_PORT),
-      { apiKey: process.env.ANTHROPIC_API_KEY || undefined, oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || undefined },
-      sessions,
-    );
+    startGateway(Number(process.env.GATEWAY_PORT), gatewayConfigFromEnv(process.env), sessions);
   }
 }
