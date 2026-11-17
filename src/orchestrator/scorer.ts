@@ -25,6 +25,8 @@ export interface Evidence {
   verifyCommand?: string;
   diff: DiffStats;
   classification?: IssueClassification;
+  /** The sandbox the session ran in, and what it refused */
+  sandbox?: { mode: string; hosts: number; blocked?: string[] };
 }
 
 const CODE_TYPES: Array<IssueClassification | undefined> = ["code-fix", "feature", "refactor", "unknown", undefined];
@@ -92,11 +94,22 @@ export function assessResult(
 
   if (fileCount === 0) score = Math.min(score, 3);
 
+  // An agent reaching for hosts outside the allowlist can be a sign of prompt injection
+  const blocked = evidence.sandbox?.blocked ?? [];
+  if (evidence.sandbox) {
+    if (blocked.length > 0) {
+      const shown = blocked.slice(0, 3).join(", ") + (blocked.length > 3 ? ", …" : "");
+      signals.push({ ok: false, label: `Tried to reach ${blocked.length} host${blocked.length === 1 ? "" : "s"} outside the sandbox: ${shown}` });
+    } else {
+      signals.push({ ok: true, label: `Ran in a ${evidence.sandbox.mode} sandbox: network limited to ${evidence.sandbox.hosts} hosts, nothing blocked` });
+    }
+  }
+
   const confidence = clamp(score);
   let lane: Lane = "review";
   if (confidence < options.draftThreshold || evidence.verify === "failed" || largeDiff) {
     lane = "draft";
-  } else if (confidence >= 8 && evidence.verify === "passed" && result.uncertainties.length === 0) {
+  } else if (confidence >= 8 && evidence.verify === "passed" && result.uncertainties.length === 0 && blocked.length === 0) {
     lane = "ready";
   }
 
@@ -107,6 +120,7 @@ export function assessResult(
     if (evidence.verify !== "passed") reasons.push("not verified");
     const n = result.uncertainties.length;
     if (n > 0) reasons.push(`${n} open uncertaint${n === 1 ? "y" : "ies"}: ${result.uncertainties[0]}${n > 1 ? " …" : ""}`);
+    if (blocked.length > 0) reasons.push("blocked network access in the sandbox");
     signals.push({ ok: false, label: `Needs eyes because of ${reasons.join("; ")}` });
   }
 

@@ -169,3 +169,127 @@ describe("choosing a sandbox", () => {
     assert.doesNotMatch(workflow, /sandbox-runtime@|bubblewrap/);
   });
 });
+
+describe("sandbox evidence", () => {
+  it("traces requests to sessions by registered token, and refuses everything else", async () => {
+    const { sessionOf } = await import("../src/sandbox/egress-proxy.js");
+    const { writeFile } = await import("node:fs/promises");
+    const dir = join(tmpdir(), `dispatch-tokens-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const token = "0123456789abcdef0123456789abcdef";
+    await writeFile(join(dir, token), "sess-1");
+    const basic = (user: string) => "Basic " + Buffer.from(`${user}:`).toString("base64");
+    try {
+      assert.equal(sessionOf(basic(token), dir), "sess-1");
+      assert.equal(sessionOf(basic("ffffffffffffffffffffffffffffffff"), dir), null, "unknown token");
+      assert.equal(sessionOf(basic("sess-1"), dir), null, "a readable ID is not a token");
+      assert.equal(sessionOf(basic("../../etc/passwd"), dir), null, "no path tricks");
+      assert.equal(sessionOf(undefined, dir), null, "no header");
+      assert.equal(sessionOf(undefined), "-", "no token folder: accepted, untraced");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a session's blocked hosts, and untraced refusals for every session", async () => {
+    const { parseBlocked } = await import("../src/sandbox/docker.js");
+    const log = [
+      "listening agent on 3128: api.anthropic.com",
+      "ALLOWED api.anthropic.com:443 (agent) session=sess-1",
+      "BLOCKED example.com:443 (agent) session=sess-1",
+      "BLOCKED example.com:443 (verify) session=sess-1",
+      "BLOCKED evil.test:443 (agent) session=sess-2",
+      "BLOCKED other.test:443 (agent) session=-",
+    ].join("\n");
+    assert.deepEqual(parseBlocked(log, "sess-1"), ["example.com:443", "other.test:443 (untraced)"]);
+    assert.deepEqual(parseBlocked(log, "sess-3"), ["other.test:443 (untraced)"]);
+    assert.deepEqual(parseBlocked("ALLOWED a:443 (agent) session=sess-1", "sess-1"), []);
+  });
+
+  it("answers 407 to clients without a registered session token", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const dir = join(tmpdir(), `dispatch-tokens-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const token = "abcdef0123456789abcdef0123456789";
+    await writeFile(join(dir, token), "sess-1");
+    const server = startProxy(0, ["example.com"], "test", dir);
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as AddressInfo).port;
+    const connect = (auth?: string) => new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "CONNECT", path: "not-listed.test:443", headers: auth ? { "Proxy-Authorization": auth } : {} });
+      req.on("connect", (res, socket) => { socket.destroy(); resolve(res.statusCode ?? 0); });
+      req.on("error", reject);
+      req.end();
+    });
+    try {
+      assert.equal(await connect(), 407);
+      assert.equal(await connect("Basic " + Buffer.from("ffffffffffffffffffffffffffffffff:").toString("base64")), 407);
+      assert.equal(await connect("Basic " + Buffer.from(`${token}:`).toString("base64")), 403, "known session, unlisted host");
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a PR that hit blocked hosts out of the ready lane, and says why", async () => {
+    const { assessResult } = await import("../src/orchestrator/scorer.js");
+    const result = { success: true, changedFiles: ["src/a.js", "test/a.test.js"], summary: "x", confidence: 10, uncertainties: [], commitMessage: "fix: a" };
+    const base = { verify: "passed" as const, verifyCommand: "npm test", diff: { files: ["src/a.js", "test/a.test.js"], additions: 5, deletions: 0 }, classification: "code-fix" as const };
+    const opts = { draftThreshold: 5, maxDiffLines: 400 };
+
+    const clean = assessResult(result, { ...base, sandbox: { mode: "docker", hosts: 10, blocked: [] } }, opts);
+    assert.equal(clean.lane, "ready");
+    assert.ok(clean.signals.some((s) => s.ok === true && /docker sandbox: network limited to 10 hosts, nothing blocked/.test(s.label)));
+
+    const blocked = assessResult(result, { ...base, sandbox: { mode: "docker", hosts: 10, blocked: ["example.com:443"] } }, opts);
+    assert.equal(blocked.lane, "review");
+    assert.ok(blocked.signals.some((s) => s.ok === false && /Tried to reach 1 host outside the sandbox: example\.com:443/.test(s.label)));
+    assert.ok(blocked.signals.some((s) => /blocked network access in the sandbox/.test(s.label)));
+  });
+
+  it("shows the sandbox in the PR body", async () => {
+    const { buildPRBody } = await import("../src/github/pulls.js");
+    const issue = { number: 1, title: "t", body: "", labels: [], comments: [], author: "a", url: "u", createdAt: "c", reactions: 0 };
+    const result = { success: true, changedFiles: ["a.js"], summary: "s", confidence: 8, uncertainties: [], commitMessage: "fix: a" };
+    const body = buildPRBody(issue, result, "", {
+      sandbox: { mode: "docker", image: "img:1", allowedDomains: ["api.anthropic.com"], allowRead: [], allowWrite: [], blocked: ["example.com:443"] },
+    });
+    assert.match(body, /🔒 Sandbox: docker \(<code>img:1<\/code>\), 1 blocked/);
+    assert.match(body, /\*\*Blocked:\*\* `example\.com:443`/);
+  });
+});
+
+describe("dispatch schedule sandbox default", () => {
+  it("uses the Docker sandbox for Claude unless --no-sandbox, and none for Gemini", async () => {
+    const { spawnSync, execFileSync } = await import("node:child_process");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname } = await import("node:path");
+    const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "dispatch.js");
+    const repo = join(tmpdir(), `dispatch-sched-${randomUUID()}`);
+    await mkdir(repo, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/example/example.git"], { cwd: repo });
+    const schedule = (...args: string[]) =>
+      spawnSync(process.execPath, [cli, "schedule", "--stdout", ...args], { cwd: repo, encoding: "utf-8" }).stdout;
+    try {
+      assert.match(schedule("--auth", "claude-code"), /--sandbox docker \\/);
+      assert.doesNotMatch(schedule("--auth", "claude-code"), /Install Claude Code/);
+      assert.doesNotMatch(schedule("--auth", "claude-code", "--no-sandbox"), /--sandbox/);
+      assert.match(schedule("--auth", "claude-code", "--sandbox"), /--sandbox \\[\s\S]*sandbox-runtime|sandbox-runtime[\s\S]*--sandbox \\/);
+      assert.doesNotMatch(schedule("--auth", "gemini"), /--sandbox/);
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("worktree paths", () => {
+  it("are unique per session, so a deleted folder is never reused (Docker Desktop caches it as missing)", async () => {
+    const { getWorktreePath } = await import("../src/utils/worktree.js");
+    const a = getWorktreePath("/r", ".dispatch", 7, "11111111-aaaa");
+    const b = getWorktreePath("/r", ".dispatch", 7, "22222222-bbbb");
+    assert.equal(a, "/r/.dispatch/worktrees/issue-7-11111111");
+    assert.notEqual(a, b);
+    assert.equal(getWorktreePath("/r", ".dispatch", 7), "/r/.dispatch/worktrees/issue-7");
+  });
+});

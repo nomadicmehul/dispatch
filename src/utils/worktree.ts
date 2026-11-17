@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { rm, access } from "node:fs/promises";
+import { rm, access, readdir } from "node:fs/promises";
 import { git, gitRemote } from "./git.js";
 import { log } from "./logger.js";
 import { Semaphore } from "./semaphore.js";
@@ -149,10 +149,13 @@ export function removeWorktree(
 }
 
 /**
- * Build the worktree path for an issue.
+ * Build the worktree path for an issue. Each session gets its own folder: Docker Desktop
+ * on macOS keeps reporting a bind-mounted folder as missing after it is deleted and
+ * created again, so reusing issue-N across runs broke the Docker sandbox's second run.
  */
-export function getWorktreePath(cwd: string, stateDir: string, issueNumber: number): string {
-  return join(cwd, stateDir, "worktrees", `issue-${issueNumber}`);
+export function getWorktreePath(cwd: string, stateDir: string, issueNumber: number, sessionId?: string): string {
+  const suffix = sessionId ? `-${sessionId.slice(0, 8)}` : "";
+  return join(cwd, stateDir, "worktrees", `issue-${issueNumber}${suffix}`);
 }
 
 /**
@@ -162,7 +165,11 @@ export function getWorktreePath(cwd: string, stateDir: string, issueNumber: numb
 export async function cleanupAllWorktrees(cwd: string, stateDir: string): Promise<void> {
   try {
     await git(["worktree", "prune"], cwd);
+    // Empty the folder rather than delete it: Docker Desktop on macOS treats new folders
+    // inside a deleted-and-recreated folder as missing, which breaks the Docker sandbox
     const worktreeDir = join(cwd, stateDir, "worktrees");
-    await rm(worktreeDir, { recursive: true, force: true });
+    for (const entry of await readdir(worktreeDir).catch(() => [] as string[])) {
+      await rm(join(worktreeDir, entry), { recursive: true, force: true });
+    }
   } catch { /* ignore */ }
 }

@@ -103,10 +103,10 @@ jobs:
 
       # Install your project's dependencies here so Dispatch can run your tests,
       # e.g. "npm ci". Without them, set "verifyCommand" to "none" in .dispatchrc.json.
-${sandbox === "srt" ? SANDBOX_INSTALL_STEP : ""}
+${sandbox === "srt" ? SANDBOX_INSTALL_STEP : ""}${sandbox === "docker" ? "" : `
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
-
+`}
       - name: Install Dispatch
         run: npm install -g dispatch-ai@beta
 
@@ -448,7 +448,8 @@ export function registerScheduleCommand(program: Command) {
     .option("--cron <expression>", "Custom cron expression (overrides --time)")
     .option("--model <model>", "Model for the gemini engine")
     .option("--auth <method>", "Auth method: api-key, claude-code (subscription token), or gemini", "api-key")
-    .option("--sandbox [backend]", "Run each agent and its tests in a sandbox on the runner: srt (default) or docker (claude engine)")
+    .option("--sandbox [backend]", "Sandbox for each agent and its tests on the runner: docker (the default for the claude engine) or srt")
+    .option("--no-sandbox", "Run agents without a sandbox")
     .option("--stdout", "Print workflow to stdout instead of writing file")
     .action(async (options) => {
       try {
@@ -489,7 +490,7 @@ export function registerScheduleCommand(program: Command) {
           process.exit(1);
         }
 
-        if (options.sandbox !== undefined && options.sandbox !== true && !["srt", "docker"].includes(options.sandbox)) {
+        if (typeof options.sandbox === "string" && !["srt", "docker"].includes(options.sandbox)) {
           log.error(`Invalid --sandbox "${options.sandbox}". Use --sandbox (srt) or --sandbox docker.`);
           process.exit(1);
         }
@@ -497,8 +498,12 @@ export function registerScheduleCommand(program: Command) {
           log.error("--sandbox supports the claude engine only (auth api-key or claude-code).");
           process.exit(1);
         }
+        // Claude workflows run agents in the Docker sandbox unless told otherwise: GitHub's
+        // runners have Docker, so it needs no setup. --sandbox alone still means srt.
+        const sandbox: boolean | "srt" | "docker" =
+          options.sandbox === undefined ? (auth === "gemini" ? false : "docker") : options.sandbox;
 
-        const workflow = generateWorkflow(cronSchedule, maxIssues, draft, labels, auth, options.model, { sandbox: options.sandbox });
+        const workflow = generateWorkflow(cronSchedule, maxIssues, draft, labels, auth, options.model, { sandbox });
 
         if (options.stdout) {
           console.log(workflow);
@@ -538,6 +543,13 @@ export function registerScheduleCommand(program: Command) {
         if (labels.length > 0) {
           console.log(chalk.gray(`    Labels: ${labels.join(", ")}`));
         }
+        console.log();
+        console.log(chalk.bold("  Sandbox:"));
+        console.log(chalk.gray(
+          sandbox === "docker" ? "    docker. Each agent and its tests run in their own container; only the Claude API and package registries are reachable. Turn off with --no-sandbox."
+            : sandbox ? "    srt (sandbox-runtime). The workflow installs it on the runner."
+            : "    none. Agents run with the runner's full access."
+        ));
         console.log();
         printAuthInstructions(auth, owner, repo);
         console.log();

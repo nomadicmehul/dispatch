@@ -164,7 +164,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
   const { config, engine, github, cwd } = ctx;
   const sessionId = randomUUID();
   const branchName = `${config.branchPrefix}issue-${issue.number}-${slugifyTitle(issue.title)}`;
-  const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number);
+  const worktreePath = getWorktreePath(cwd, config.stateDir, issue.number, sessionId);
   const classification = issue.classification || "unknown";
   const isInvestigation = REPORT_TYPES.includes(issue.classification ?? "unknown");
   const keepRecords = config.provenance !== "off";
@@ -279,9 +279,19 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
       status = "no-changes";
     } else {
       diff = await stagedDiffStats(worktreePath);
+      if (box && ctx.sandbox?.blockedHosts) {
+        box.record.blocked = await ctx.sandbox.blockedHosts(sessionId);
+        record.sandbox = box.record;
+      }
       assessment = assessResult(
         result,
-        { verify: verify.status, verifyCommand: verify.command, diff, classification: issue.classification },
+        {
+          verify: verify.status,
+          verifyCommand: verify.command,
+          diff,
+          classification: issue.classification,
+          sandbox: box ? { mode: box.record.mode, hosts: box.record.allowedDomains.length, blocked: box.record.blocked } : undefined,
+        },
         config,
       );
       result = { ...result, confidence: assessment.confidence, changedFiles: diff.files };
@@ -315,6 +325,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
           assessment,
           verify: verify.command ? verify : undefined,
           heldBack,
+          sandbox: box?.record,
           session: keepRecords
             ? { id: sessionId, engine: engine.name, model: config.model, costUsd: result.session?.costUsd, turns: result.session?.turns }
             : undefined,
@@ -380,6 +391,7 @@ export async function solveIssue(issue: Issue, ctx: SolveIssueContext): Promise<
     costUsd: result?.session?.costUsd,
     sessionId: keepRecords ? sessionId : undefined,
     readiness: ctx.readiness?.score,
+    sandbox: box?.record.mode,
     diff: diff ? { files: diff.files.length, additions: diff.additions, deletions: diff.deletions } : undefined,
   };
 
