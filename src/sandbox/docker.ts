@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Launcher } from "../engine/types.js";
+import { SENTINEL_API_KEY, SENTINEL_OAUTH_TOKEN } from "./egress-proxy.js";
 import { log } from "../utils/logger.js";
 import {
   AGENT_DOMAINS,
@@ -40,6 +41,7 @@ export const DEFAULT_IMAGE = "dispatch-sandbox:node22";
 const PROXY_IMAGE = "node:22-bookworm-slim";
 const AGENT_PORT = 3128;
 const VERIFY_PORT = 3129;
+const GATEWAY_PORT = 3130;
 
 /** Dockerfile for the default image: Node, git and Claude Code */
 export const DEFAULT_DOCKERFILE = `FROM node:22-bookworm-slim
@@ -53,6 +55,12 @@ export interface DockerOptions {
   image?: string;
   /** docker binary */
   docker?: string;
+  /**
+   * How Claude's credential reaches the agent. "gateway" (default): the agent gets a
+   * placeholder and talks to the Anthropic gateway in the proxy container, which adds the
+   * real credential, so it never enters the agent's container. "env": passed in as before.
+   */
+  credentials?: "gateway" | "env";
   extraDomains?: string[];
   extraRead?: string[];
   extraWrite?: string[];
@@ -132,8 +140,31 @@ export class DockerSandbox implements SandboxBackend {
     this.image = options.image || DEFAULT_IMAGE;
   }
 
+  private get gateway(): boolean {
+    return (this.options.credentials ?? "gateway") === "gateway";
+  }
+
+  /**
+   * Agent environment for gateway mode: the gateway as Claude's API endpoint (with the
+   * session token in the path, NO_PROXY so it isn't sent through the egress proxy) and a
+   * placeholder of the same kind as the real credential, which the gateway replaces.
+   */
+  private gatewayEnv(token: string): Record<string, string> {
+    const placeholder: Record<string, string> = process.env.ANTHROPIC_API_KEY
+      ? { ANTHROPIC_API_KEY: SENTINEL_API_KEY }
+      : { CLAUDE_CODE_OAUTH_TOKEN: SENTINEL_OAUTH_TOKEN };
+    return {
+      ANTHROPIC_BASE_URL: `http://${this.proxy}:${GATEWAY_PORT}/${token}`,
+      NO_PROXY: this.proxy,
+      no_proxy: this.proxy,
+      ...placeholder,
+    };
+  }
+
+  /** Hosts agents may reach directly. In gateway mode the Claude API is reached only through the gateway */
   private agentDomains(): string[] {
-    return [...new Set([...AGENT_DOMAINS, ...REGISTRY_DOMAINS, ...(this.options.extraDomains ?? [])])];
+    const claude = this.gateway ? [] : AGENT_DOMAINS;
+    return [...new Set([...claude, ...REGISTRY_DOMAINS, ...(this.options.extraDomains ?? [])])];
   }
 
   private verifyDomains(): string[] {
@@ -209,6 +240,8 @@ export class DockerSandbox implements SandboxBackend {
       "-e", `VERIFY_PORT=${VERIFY_PORT}`,
       "-e", `AGENT_DOMAINS=${this.agentDomains().join(",")}`,
       "-e", `VERIFY_DOMAINS=${this.verifyDomains().join(",")}`,
+      // The gateway's real credential, passed by name so it stays off the command line
+      ...(this.gateway ? ["-e", `GATEWAY_PORT=${GATEWAY_PORT}`, ...CLAUDE_CREDENTIAL_VARS.flatMap((name) => ["-e", name])] : []),
       PROXY_IMAGE, "node", "/proxy/egress-proxy.js",
     ], 10 * 60_000);
     await this.run(["network", "connect", this.network, this.proxy]);
@@ -281,8 +314,12 @@ export class DockerSandbox implements SandboxBackend {
         ...base,
         mounts: mounts([configDir]),
         proxy: `http://${token}@${this.proxy}:${AGENT_PORT}`,
-        env: { CLAUDE_CONFIG_DIR: configDir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
-        passEnv: CLAUDE_CREDENTIAL_VARS,
+        env: {
+          CLAUDE_CONFIG_DIR: configDir,
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+          ...(this.gateway ? this.gatewayEnv(token) : {}),
+        },
+        passEnv: this.gateway ? [] : CLAUDE_CREDENTIAL_VARS,
       }),
       configDir,
       stop,
@@ -305,7 +342,8 @@ export class DockerSandbox implements SandboxBackend {
       record: {
         mode: "docker",
         image: this.image,
-        allowedDomains: this.agentDomains(),
+        credentials: this.gateway ? "gateway" : "env",
+        allowedDomains: this.gateway ? ["api.anthropic.com (via the credential gateway)", ...this.agentDomains()] : this.agentDomains(),
         allowRead: [params.worktreePath, configDir, ...readOnly],
         allowWrite: [params.worktreePath, configDir, ...(this.options.extraWrite ?? [])],
       },

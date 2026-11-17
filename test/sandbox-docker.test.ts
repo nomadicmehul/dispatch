@@ -116,24 +116,49 @@ describe("DockerSandbox", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("gives the agent Claude's config and credentials, and verify neither", async () => {
+  async function prepare(credentials?: "gateway" | "env") {
     const repo = join(root, "repo");
     const worktree = join(repo, ".dispatch", "worktrees", "issue-1");
-    const box = await new DockerSandbox({}).prepareIssue({
+    return new DockerSandbox({ credentials }).prepareIssue({
       sessionId: "s1",
       dir: join(repo, ".dispatch", "sandbox", "s1"),
       worktreePath: worktree,
       repoRoot: repo,
       linkedTargets: [join(repo, "node_modules"), join(repo, "missing")],
     });
+  }
 
+  it("by default keeps Claude's real credential out of the agent's container (gateway)", async () => {
+    const saved = { key: process.env.ANTHROPIC_API_KEY, oauth: process.env.CLAUDE_CODE_OAUTH_TOKEN };
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-real";
+    try {
+      const box = await prepare();
+      const agent = box.agent.args.join(" ");
+      assert.match(agent, /ANTHROPIC_BASE_URL=http:\/\/dispatch-proxy-\w+:3130\/[a-f0-9]{32}/);
+      assert.match(agent, /CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-dispatch-sandbox-placeholder/);
+      assert.doesNotMatch(agent, /sk-ant-oat01-real/);
+      assert.ok(!box.agent.args.some((a, i) => a === "CLAUDE_CODE_OAUTH_TOKEN" && box.agent.args[i - 1] === "-e"), "real token not passed by name");
+      assert.match(agent, /NO_PROXY=dispatch-proxy-/);
+      assert.equal(box.record.credentials, "gateway");
+      assert.ok(box.record.allowedDomains[0].includes("credential gateway"));
+      assert.ok(!box.record.allowedDomains.includes("api.anthropic.com"), "no direct route to the API");
+    } finally {
+      if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved.key;
+      if (saved.oauth === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN; else process.env.CLAUDE_CODE_OAUTH_TOKEN = saved.oauth;
+    }
+  });
+
+  it("with credentials: env, passes the credential by name; verify never gets it", async () => {
+    const box = await prepare("env");
     const agent = box.agent.args.join(" ");
     const verify = box.verify.args.join(" ");
     assert.equal(box.agent.command, "docker");
     assert.match(agent, /CLAUDE_CONFIG_DIR=/);
     assert.match(agent, /-e CLAUDE_CODE_OAUTH_TOKEN/);
+    assert.doesNotMatch(agent, /ANTHROPIC_BASE_URL/);
     assert.match(agent, /:3128/);
-    assert.doesNotMatch(verify, /CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|CLAUDE_CONFIG_DIR/);
+    assert.doesNotMatch(verify, /CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|CLAUDE_CONFIG_DIR|ANTHROPIC_BASE_URL/);
     assert.match(verify, /:3129/);
     // Only paths that exist are mounted (docker refuses missing sources)
     assert.match(agent, /node_modules,readonly/);
@@ -291,5 +316,46 @@ describe("worktree paths", () => {
     assert.equal(a, "/r/.dispatch/worktrees/issue-7-11111111");
     assert.notEqual(a, b);
     assert.equal(getWorktreePath("/r", ".dispatch", 7), "/r/.dispatch/worktrees/issue-7");
+  });
+});
+
+describe("credential gateway", () => {
+  it("swaps the placeholder for the real credential and drops hop-by-hop headers", async () => {
+    const { injectCredentials, SENTINEL_API_KEY, SENTINEL_OAUTH_TOKEN } = await import("../src/sandbox/egress-proxy.js");
+    const apiKey = injectCredentials({ "x-api-key": SENTINEL_API_KEY, "Content-Type": "application/json", host: "gw", connection: "keep-alive", "proxy-authorization": "Basic x" }, { apiKey: "real-key" });
+    assert.equal(apiKey["x-api-key"], "real-key");
+    assert.equal(apiKey["content-type"], "application/json");
+    assert.equal(apiKey.host, undefined);
+    assert.equal(apiKey.connection, undefined);
+    assert.equal(apiKey["proxy-authorization"], undefined);
+    const oauth = injectCredentials({ Authorization: `Bearer ${SENTINEL_OAUTH_TOKEN}` }, { oauthToken: "real-token" });
+    assert.equal(oauth.authorization, "Bearer real-token");
+    // No real credential of that kind: the placeholder is removed, never forwarded
+    assert.equal(injectCredentials({ "x-api-key": SENTINEL_API_KEY }, { oauthToken: "t" })["x-api-key"], undefined);
+  });
+
+  it("refuses requests without a registered session token", async () => {
+    const { startGateway } = await import("../src/sandbox/egress-proxy.js");
+    const { writeFile } = await import("node:fs/promises");
+    const dir = join(tmpdir(), `dispatch-gw-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "0123456789abcdef0123456789abcdef"), "s1");
+    const server = startGateway(0, { apiKey: "k" }, dir, "upstream.invalid");
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as AddressInfo).port;
+    const status = (path: string) => new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port, path, method: "POST" }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on("error", reject);
+      req.end();
+    });
+    try {
+      assert.equal(await status("/v1/messages"), 407);
+      assert.equal(await status("/ffffffffffffffffffffffffffffffff/v1/messages"), 407);
+      // A known session is forwarded; the fake upstream can't be reached, so 502
+      assert.equal(await status("/0123456789abcdef0123456789abcdef/v1/messages"), 502);
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

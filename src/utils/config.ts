@@ -59,6 +59,8 @@ export interface DispatchConfig {
   sandbox: "off" | "srt" | "docker";
   /** Image for the docker sandbox: node (or your toolchain) plus the claude CLI. Empty = build dispatch-sandbox:node22 */
   dockerImage: string;
+  /** Docker sandbox: "gateway" keeps Claude's credential out of the agent's container; "env" passes it in */
+  sandboxCredentials: "gateway" | "env";
   /** Path or name of the srt binary */
   srtPath: string;
   /** Extra hosts sandboxed sessions may reach, besides the Claude API and package registries */
@@ -104,6 +106,7 @@ const DEFAULT_CONFIG: DispatchConfig = {
   repoBrief: true,
   sandbox: "off",
   dockerImage: "",
+  sandboxCredentials: "gateway",
   srtPath: "srt",
   sandboxAllowedDomains: [],
   sandboxAllowRead: [],
