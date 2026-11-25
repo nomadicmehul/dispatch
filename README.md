@@ -297,10 +297,22 @@ Sandboxing is off by default. Turn it on to run each agent, and its setup and ve
 Either way, the whole `claude` process is inside, so its file tools, hooks and MCP servers are too. Claude Code's own sandbox setting covers only its Bash tool.
 
 **With Docker, Claude's credential never enters the agent's container.**
-- The agent gets a placeholder key or token, and points Claude at an Anthropic gateway in Dispatch's proxy container (`ANTHROPIC_BASE_URL`).
-- The gateway checks the session, swaps in your real `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and forwards to the Claude API.
-- A compromised agent can use the API through the gateway, but can't take the credential with it.
+- The agent gets a placeholder key or token (or none, for the cloud providers), and points Claude at a gateway in Dispatch's proxy container.
+- The gateway checks the session, adds your real credential, and forwards only to the provider's model API.
+- A compromised agent can use the model through the gateway, but can't take the credential with it.
 - `"sandboxCredentials": "env"` turns this off and passes the credential in, as srt does.
+
+**Claude on Amazon Bedrock, Google Cloud Vertex AI or Microsoft Foundry.** Set Claude Code's own variables and Dispatch follows them, sandboxed or not: billing, access control and audit logs stay in your cloud account. Pin your models (`ANTHROPIC_DEFAULT_SONNET_MODEL` and so on); Dispatch passes pins into the sandbox.
+
+| Provider | Turn on | Credential in sandbox mode | With Docker, the gateway… |
+|---|---|---|---|
+| Anthropic | (default) | `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` | swaps the placeholder for the real key or token |
+| Amazon Bedrock | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` | `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key), or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN`) | signs each request (AWS Signature V4) or adds the API key |
+| Google Cloud Vertex AI | `CLAUDE_CODE_USE_VERTEX=1`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | Application Default Credentials (`gcloud auth application-default login`), a service account key in `GOOGLE_APPLICATION_CREDENTIALS`, or (Docker only) `GOOGLE_OAUTH_ACCESS_TOKEN` | mints and refreshes Google access tokens from the key, and accepts only your project and regions |
+| Microsoft Foundry | `CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE` | `ANTHROPIC_FOUNDRY_API_KEY`, or an Entra ID token in `ANTHROPIC_FOUNDRY_AUTH_TOKEN` | swaps the placeholder for the real key or token |
+
+- The sandbox hides `~/.aws`, `~/.azure` and your keychain, so profile, SSO and `az login` credentials must be exported first. For an AWS profile, including SSO: `eval "$(aws configure export-credentials --format env)"`. Temporary credentials expire; a long run needs ones that last it.
+- Not supported in sandbox mode yet: the Bedrock Mantle endpoint, and routing through your own LLM gateway (`ANTHROPIC_BEDROCK_BASE_URL` and the like) behind Dispatch's gateway; use `"sandboxCredentials": "env"` for the latter. With the Docker gateway, Vertex workload identity files (`external_account`) need `GOOGLE_OAUTH_ACCESS_TOKEN` instead.
 
 The table below describes the srt backend. The Docker backend applies the same network rules through its proxy, and mounts nothing else.
 
@@ -308,14 +320,14 @@ The table below describes the srt backend. The Docker backend applies the same n
 |---|---|---|
 | Read | its worktree, toolchains (`~/.nvm`, `~/.cargo`, …), the `claude` binary, a fresh per-issue Claude config folder; **not** the rest of `$HOME` (credentials, `~/.claude`, other projects) or the main checkout | the same, without the Claude config |
 | Write | its worktree, its Claude config folder, the temp folder | its worktree, the temp folder |
-| Network | the Claude API and package registries (npm, PyPI, Go, crates, RubyGems), plus `sandboxAllowedDomains` | package registries, plus `sandboxAllowedDomains` |
+| Network | the model provider's API and package registries (npm, PyPI, Go, crates, RubyGems), plus `sandboxAllowedDomains` | package registries, plus `sandboxAllowedDomains` |
 
 Each issue gets a fresh `CLAUDE_CONFIG_DIR`, so your hooks, MCP servers and memory don't load, and nothing is written to your real `~/.claude`. Session records and `dispatch explain` show the policy.
 
 **Setup**
 - **srt:** `npm install -g @anthropic-ai/sandbox-runtime` (Node 22.12+). On Linux also install `bubblewrap`, `socat` and `ripgrep`.
 - **Docker:** start Docker. On macOS, native packages in your `node_modules` (built for macOS) won't load in the Linux container; set `"setupCommand": "npm ci"` so dependencies are installed inside it.
-- Give Claude a credential in the environment. The sandbox keeps it away from your keychain: run `claude setup-token` and export `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY`.
+- Give Claude a credential in the environment. The sandbox keeps it away from your keychain: run `claude setup-token` and export `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY`, or use a cloud provider (table above).
 - In GitHub Actions, workflows from `dispatch schedule` use the Docker sandbox by default for Claude. GitHub's runners have Docker, so it needs nothing extra, and the runner doesn't need Claude Code installed. `--sandbox` switches to srt and generates its install step; `--no-sandbox` turns sandboxing off.
 
 **Evidence in the PR**
@@ -324,7 +336,7 @@ Each issue gets a fresh `CLAUDE_CONFIG_DIR`, so your hooks, MCP servers and memo
 - `dispatch explain` and the morning report (🔒) show the same. On Ubuntu 24.04 and later it also lifts the user-namespace restriction bubblewrap needs and unloads the `bwrap-userns-restrict` AppArmor profile; the general sysctl alone isn't enough.
 
 **Limits**
-- Sandbox mode fails closed: it refuses to start without `srt` or a running Docker, without an environment credential, or with the Gemini engine, which runs its tools inside Dispatch's own process.
+- Sandbox mode fails closed: it refuses to start without `srt` or a running Docker, without a credential for the model provider, or with the Gemini engine, which runs its tools inside Dispatch's own process. The Gemini engine is experimental: it's due to be rebuilt on Gemini CLI, so use it only on repositories and issues you trust.
 - If a Docker run is killed hard, remove what it left with `docker rm -f $(docker ps -aq --filter label=dispatch=sandbox)` and `docker network prune --filter label=dispatch=sandbox`. Ctrl-C cleans up by itself.
 - macOS and Linux only; on Windows, use WSL2.
 - `srt` is a beta research preview.
@@ -425,9 +437,11 @@ Claude Code is the most complete engine: it supports spend caps (`--max-budget-u
 
 GitHub [retired GitHub Models on 2026-07-30](https://github.blog/changelog/2026-07-30-github-models-is-now-retired/); its inference API no longer answers. If your `.dispatchrc.json` still says `"engine": "github-models"`, Dispatch exits with an explanation. Switch to `"claude"` or `"gemini"`.
 
-### Gemini
+### Gemini (experimental)
 
 Uses Google's [Gemini API](https://ai.google.dev/) via its OpenAI-compatible endpoint. Requires a `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey).
+
+> **Experimental.** This engine runs its own tool loop inside Dispatch's process, so it can't use the sandbox, and it is due to be rebuilt on [Gemini CLI](https://geminicli.com/). Use it only on repositories and issues you trust. To run Claude on Google Cloud instead, see Claude on Vertex AI under [Sandbox](#sandbox).
 
 ```json
 {

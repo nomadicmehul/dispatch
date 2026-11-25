@@ -10,6 +10,8 @@ export interface SandboxRecord {
   allowWrite: string[];
   /** Where Claude's credential lived: outside the container behind a gateway, or in its environment */
   credentials?: "gateway" | "env";
+  /** Where Claude got its model, e.g. "Amazon Bedrock" */
+  provider?: string;
   /** Hosts the sandbox refused for this session (docker), e.g. "example.com:443" */
   blocked?: string[];
 }
@@ -51,7 +53,8 @@ export interface SandboxBackend {
 export const CLAUDE_CREDENTIAL_VARS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
 export const CREDENTIAL_HINT =
   "Sandbox mode keeps Claude away from your keychain and ~/.claude, so it needs a credential in the environment. " +
-  "Run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN (or set ANTHROPIC_API_KEY).";
+  "Run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN (or set ANTHROPIC_API_KEY, " +
+  "or use Claude on Bedrock, Vertex AI or Foundry with CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX or CLAUDE_CODE_USE_FOUNDRY).";
 
 /** Hosts an agent session needs: the Claude API plus the common package registries */
 export const AGENT_DOMAINS = ["api.anthropic.com"];
